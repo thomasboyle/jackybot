@@ -1,0 +1,2 @@
+# jackybot
+JackyBot Discord bot
