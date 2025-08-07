@@ -2,12 +2,10 @@ import discord
 import asyncio
 import os
 import aiofiles
-import random
 from discord.ext import commands
 from gtts import gTTS
 from groq import Groq
 import json
-from functools import lru_cache
 from concurrent.futures import ThreadPoolExecutor
 import time
 from collections import deque
@@ -49,7 +47,13 @@ class ConnectionPool:
         return conn
 
     async def close(self):
-        await asyncio.gather(*(conn.close() for conn in self.connections if hasattr(conn, 'close')))
+        for conn in self.connections:
+            close_attr = getattr(conn, 'close', None)
+            if close_attr is None:
+                continue
+            result = close_attr()
+            if asyncio.iscoroutine(result):
+                await result
 
 # Bot state
 class BotState:
@@ -77,21 +81,30 @@ async def setup_hook():
             print(f'Failed to load {filename}: {result}')
     
     asyncio.create_task(cleanup_task())
-    await load_jackychat_channels()
-    print('Bot is ready')
-    
-    if channel := bot.get_channel(Config.CHANNEL_ID):
-        try:
-            asyncio.create_task(channel.send('JackyBot Online...'))
-        except discord.Forbidden:
-            print(f"Missing permissions to send message in channel {Config.CHANNEL_ID}")
 
 bot.setup_hook = setup_hook
 
-# Channel cache
-@lru_cache(maxsize=50)
-def get_channel_cached(channel_id):
-    return bot.get_channel(channel_id)
+# Ready handler (fires once)
+_ready_once = False
+
+@bot.event
+async def on_ready():
+    global _ready_once
+    if _ready_once:
+        return
+    _ready_once = True
+
+    await load_jackychat_channels()
+    print('Bot is ready')
+
+    channel = bot.get_channel(Config.CHANNEL_ID)
+    if channel:
+        try:
+            await channel.send('JackyBot Online...')
+        except discord.Forbidden:
+            print(f"Missing permissions to send message in channel {Config.CHANNEL_ID}")
+        except Exception as e:
+            print(f"Failed to send startup message: {e}")
 
 # Message handler
 @bot.event
@@ -119,17 +132,11 @@ async def on_message(message):
             if gid != guild_id and ch
         ]
         if tasks:
-            await asyncio.gather(*tasks)
+            await asyncio.gather(*tasks, return_exceptions=True)
     
     await bot.process_commands(message)
 
-# Shutdown handler
-@bot.event
-async def on_close():
-    print("Bot is shutting down...")
-    if bot.pool: await bot.pool.close()
-    if bot.executor: bot.executor.shutdown(wait=False)
-    print("Cleanup complete.")
+# Note: discord.py has no on_close event; cleanup is handled in shutdown/main
 
 # Ping command
 @bot.command()
@@ -152,7 +159,11 @@ async def tts(ctx, *, message):
     temp_file = f"temp_{ctx.message.id}.mp3"
     try:
         await bot.loop.run_in_executor(bot.executor, lambda: gTTS(text=message, lang='en').save(temp_file))
-        vc.play(discord.FFmpegPCMAudio(temp_file), after=lambda e: (print(f"Error in voice playback: {e}") if e else None, asyncio.run_coroutine_threadsafe(delete_file(temp_file), bot.loop)))
+        def _after(play_error):
+            if play_error:
+                print(f"Error in voice playback: {play_error}")
+            asyncio.run_coroutine_threadsafe(delete_file(temp_file), bot.loop)
+        vc.play(discord.FFmpegPCMAudio(temp_file), after=_after)
     except Exception as e:
         await ctx.reply("Failed to generate TTS audio.")
         print(f"TTS Error: {e}")
@@ -213,7 +224,7 @@ async def load_jackychat_channels():
             data = json.loads(content)
             for guild_id, info in data.items():
                 if channel_id := info.get('channel_id'):
-                    if channel := get_channel_cached(channel_id):
+                    if channel := bot.get_channel(channel_id):
                         bot.state.jackychat_channels[int(guild_id)] = channel
     except FileNotFoundError:
         pass
@@ -226,6 +237,12 @@ async def shutdown(signal, loop):
     tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
     [task.cancel() for task in tasks]
     await asyncio.gather(*tasks, return_exceptions=True)
+    try:
+        if bot.pool:
+            await bot.pool.close()
+    finally:
+        if bot.executor:
+            bot.executor.shutdown(wait=False)
     await bot.close()
     loop.stop()
 
@@ -248,6 +265,12 @@ async def main():
     except Exception as e:
         print(f"Error starting bot: {e}")
     finally:
+        try:
+            if bot.pool:
+                await bot.pool.close()
+        finally:
+            if bot.executor:
+                bot.executor.shutdown(wait=False)
         if not bot.is_closed():
             await bot.close()
 
