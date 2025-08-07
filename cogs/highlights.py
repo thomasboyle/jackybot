@@ -10,7 +10,7 @@ class HighlightsCog(commands.Cog):
         self.bot = bot
         self.highlight_channel_name = "teli-highlights"
         self.star_emoji = "⭐"
-        self.data_file = 'highlights_data.json'
+        self.data_file = 'data/highlights_data.json'
         self.highlighted_messages = set()
         self._image_extensions = ('.png', '.jpg', '.jpeg', '.gif', '.webp')
         self._video_extensions = ('.mp4', '.mov', '.avi', '.webm')

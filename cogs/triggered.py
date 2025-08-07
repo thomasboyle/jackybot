@@ -4,6 +4,7 @@ from PIL import Image
 import imageio
 import io
 import aiohttp
+import os
 import random
 
 class TriggeredCog(commands.Cog):
@@ -56,7 +57,7 @@ class TriggeredCog(commands.Cog):
         img = img.resize((512, 512), Image.LANCZOS)
 
         # Load the triggered overlay
-        overlay = Image.open("triggered.png").convert("RGBA")
+        overlay = Image.open(os.path.join("assets", "images", "triggered.png")).convert("RGBA")
         overlay_height = int(512 * 0.2)  # 20% of the image height
         overlay = overlay.resize((512, overlay_height))
 

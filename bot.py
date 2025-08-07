@@ -199,7 +199,7 @@ async def save_jackychat_channels():
     
     data = {str(gid): {'channel_id': ch.id} for gid, ch in bot.state.jackychat_channels.items()}
     try:
-        async with aiofiles.open('jackychat_channels.json', 'w') as f:
+        async with aiofiles.open('data/jackychat_channels.json', 'w') as f:
             await f.write(json.dumps(data))
     except Exception as e:
         print(f"Error saving jackychat channels: {e}")
@@ -207,7 +207,7 @@ async def save_jackychat_channels():
 # Load jackychat channels
 async def load_jackychat_channels():
     try:
-        async with aiofiles.open('jackychat_channels.json', 'r') as f:
+        async with aiofiles.open('data/jackychat_channels.json', 'r') as f:
             content = await f.read()
             if not content.strip(): return
             data = json.loads(content)
@@ -218,7 +218,7 @@ async def load_jackychat_channels():
     except FileNotFoundError:
         pass
     except (json.JSONDecodeError, Exception) as e:
-        print(f"Could not load jackychat_channels.json ({e}). Starting fresh.")
+        print(f"Could not load data/jackychat_channels.json ({e}). Starting fresh.")
 
 # Graceful shutdown
 async def shutdown(signal, loop):

@@ -13,11 +13,11 @@ class DailyRandomAvatar(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.user_avatars = {}
-        self.json_file = 'user_avatars.json'
+        self.json_file = 'data/user_avatars.json'
         self.background_images = ['v1.png', 'v2.png', 'v3.png', 'v4.png', 'v5.png', 'v6.png']
         
         # Pre-load background images into memory
-        self.backgrounds = {name: Image.open(name) for name in self.background_images}
+        self.backgrounds = {name: Image.open(os.path.join('assets/images', name)) for name in self.background_images}
         
         # Precompute constants and masks
         self.avatar_size = 300

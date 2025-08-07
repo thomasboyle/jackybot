@@ -125,7 +125,7 @@ class VideoTextCog2(commands.Cog):
     @commands.command()
     async def homelander(self, ctx, *, text: str):
         """Add wrapped text (max 85 chars) to the top of a different video template while preserving audio."""
-        await self.process_video_command(ctx, text, "homelander.mp4")
+        await self.process_video_command(ctx, text, "assets/videos/homelander.mp4")
 
 async def setup(bot):
     await bot.add_cog(VideoTextCog2(bot))

@@ -143,7 +143,7 @@ class PlaylistView(ui.View):
 class PlaylistManager(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.playlists_file = "playlists.json"
+        self.playlists_file = "data/playlists.json"
         self.playlists: Dict[str, Dict] = {}
         self.load_playlists()
 

@@ -15,7 +15,7 @@ class AuraCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.groq_client = groq.Groq()
-        self.data_file = 'aura_data.json'
+        self.data_file = 'data/aura_data.json'
         self.daily_info = {}
         self.used_values = {}
         self.last_reset = None

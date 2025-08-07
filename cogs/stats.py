@@ -12,10 +12,10 @@ class StatTrackingCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.start_time = time.time()  # Track bot session start time
-        self.command_stats = self.load_stats('command_stats.json')
-        self.server_stats = self.load_stats('server_command_stats.json')
-        self.user_stats = self.load_stats('user_stats.json')  # New: Track user-specific stats
-        self.error_stats = self.load_stats('error_stats.json')  # New: Track command errors
+        self.command_stats = self.load_stats('data/command_stats.json')
+        self.server_stats = self.load_stats('data/server_command_stats.json')
+        self.user_stats = self.load_stats('data/user_stats.json')  # New: Track user-specific stats
+        self.error_stats = self.load_stats('data/error_stats.json')  # New: Track command errors
 
     def load_stats(self, filename):
         if os.path.exists(filename):
@@ -34,7 +34,7 @@ class StatTrackingCog(commands.Cog):
         prefix = ctx.prefix
         key = f"{prefix}{command_name}"
         self.command_stats[key] = self.command_stats.get(key, 0) + 1
-        self.save_stats(self.command_stats, 'command_stats.json')
+        self.save_stats(self.command_stats, 'data/command_stats.json')
 
         # Update server stats
         server_id = str(ctx.guild.id) if ctx.guild else 'DM'
@@ -43,21 +43,21 @@ class StatTrackingCog(commands.Cog):
             self.server_stats[server_id] = {"name": server_name, "count": 0, "last_used": ""}
         self.server_stats[server_id]["count"] += 1
         self.server_stats[server_id]["last_used"] = datetime.now().isoformat()
-        self.save_stats(self.server_stats, 'server_command_stats.json')
+        self.save_stats(self.server_stats, 'data/server_command_stats.json')
 
         # Update user stats
         user_id = str(ctx.author.id)
         if user_id not in self.user_stats:
             self.user_stats[user_id] = {"name": str(ctx.author), "count": 0}
         self.user_stats[user_id]["count"] += 1
-        self.save_stats(self.user_stats, 'user_stats.json')
+        self.save_stats(self.user_stats, 'data/user_stats.json')
 
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error):
         # Track command errors
         error_type = type(error).__name__
         self.error_stats[error_type] = self.error_stats.get(error_type, 0) + 1
-        self.save_stats(self.error_stats, 'error_stats.json')
+        self.save_stats(self.error_stats, 'data/error_stats.json')
 
     def get_uptime(self):
         """Calculate bot uptime in a human-readable format."""

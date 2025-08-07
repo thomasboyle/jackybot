@@ -31,7 +31,7 @@ class VideoTextCog(commands.Cog):
             await ctx.send(f"Error: Text exceeds {self.char_limit} character limit.")
             return
 
-        if not os.path.exists("template.mp4"):
+        if not os.path.exists("assets/videos/template.mp4"):
             await ctx.send("Error: template.mp4 file not found.")
             return
 
@@ -52,7 +52,7 @@ class VideoTextCog(commands.Cog):
         # Direct text wrapping without escaping (ffmpeg handles most cases)
         wrapped_text = textwrap.fill(text, width=self.wrap_width)
         
-        input_video = ffmpeg.input("template.mp4")
+        input_video = ffmpeg.input("assets/videos/template.mp4")
         
         # Streamlined drawtext parameters
         drawtext_params = {
@@ -97,7 +97,7 @@ class VideoTextCog(commands.Cog):
     @lru_cache(maxsize=1)
     def get_video_dimensions(self):
         try:
-            probe = ffmpeg.probe("template.mp4", select_streams='v:0')
+            probe = ffmpeg.probe("assets/videos/template.mp4", select_streams='v:0')
             return int(probe['streams'][0]['width']), int(probe['streams'][0]['height'])
         except Exception:
             return 1920, 1080

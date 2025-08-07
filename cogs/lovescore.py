@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 import aiohttp
 from PIL import Image, ImageDraw, ImageFont
+import os
 import io
 import random
 import datetime
@@ -30,7 +31,7 @@ class LoveCog(commands.Cog):
         self.font = ImageFont.truetype("arial.ttf", 36)
         
         # Load and optimize heart image
-        heart = Image.open("heart.png")
+        heart = Image.open(os.path.join("assets", "images", "heart.png"))
         self.heart_image = heart.convert("RGBA").resize((120, 120), Image.LANCZOS)
         
         # Create background once
