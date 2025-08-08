@@ -1,4 +1,6 @@
 import discord
+import ctypes
+import ctypes.util
 import asyncio
 import os
 import aiofiles
@@ -31,6 +33,7 @@ class Config:
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
+intents.voice_states = True
 bot = commands.Bot(command_prefix='!', intents=intents, chunk_guilds_at_startup=False, case_insensitive=True, max_messages=Config.MAX_MESSAGES)
 
 # Connection pool
@@ -106,6 +109,15 @@ async def on_ready():
         except Exception as e:
             print(f"Failed to send startup message: {e}")
 
+    # Ensure Opus is loaded for voice support
+    try:
+        if not discord.opus.is_loaded():
+            opus_path = ctypes.util.find_library('opus')
+            if opus_path:
+                discord.opus.load_opus(opus_path)
+    except Exception as e:
+        print(f"Warning: Opus library not loaded ({e}). Voice may fail. Install Opus or ensure it is on PATH.")
+
 # Message handler
 @bot.event
 async def on_message(message):
@@ -145,6 +157,28 @@ async def ping(ctx):
     msg = await ctx.reply("Measuring latency...")
     end = time.perf_counter()
     await msg.edit(content=f'Pong! API: {round(bot.latency * 1000)}ms | Message: {round((end - start) * 1000)}ms')
+
+@bot.command()
+async def voice_diag(ctx):
+    """Diagnose voice dependencies (Opus, PyNaCl)."""
+    nacl_ok = False
+    try:
+        import nacl
+        nacl_ok = True
+    except Exception:
+        pass
+
+    opus_loaded = discord.opus.is_loaded()
+    if not opus_loaded:
+        try:
+            opus_path = ctypes.util.find_library('opus')
+            if opus_path:
+                discord.opus.load_opus(opus_path)
+                opus_loaded = discord.opus.is_loaded()
+        except Exception:
+            pass
+
+    await ctx.reply(f"PyNaCl: {'OK' if nacl_ok else 'MISSING'} | Opus: {'LOADED' if opus_loaded else 'NOT LOADED'}")
 
 # TTS command
 @bot.command()
