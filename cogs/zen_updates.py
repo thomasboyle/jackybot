@@ -130,7 +130,7 @@ class ZenUpdatesCog(commands.Cog):
             return self._latest_cache
 
     # ---- Posting ----
-    async def _post_release(self, channel: discord.abc.MessageableChannel, release: Dict[str, Any]) -> None:
+    async def _post_release(self, channel: discord.abc.Messageable, release: Dict[str, Any]) -> None:
         body = release.get("body", "").strip()
         if body and len(body) > 1900:
             body = body[:1900] + "..."
