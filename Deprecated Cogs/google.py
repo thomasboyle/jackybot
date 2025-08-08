@@ -15,7 +15,7 @@ def to_markdown(text):
 
 
 # Or use `os.getenv('GOOGLE_API_KEY')` to fetch an environment variable.
-GOOGLE_API_KEY=userdata.get('AIzaSyDb_KBX001ZYVEAGcTuKs-zyJJwdhHjFfE')
+GOOGLE_API_KEY=userdata.get('redacted')
 
 genai.configure(api_key=GOOGLE_API_KEY)
 
