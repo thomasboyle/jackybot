@@ -30,11 +30,9 @@ class SharedModelManager:
         self.executor = ThreadPoolExecutor(max_workers=1)
         self.initialization_lock = asyncio.Lock()
         
-        # Cache expensive path operations
         self.custom_model_path = r"C:\Users\thoma\Documents\Python Programs\JackyBot\JackyBot March 2025\JackyBot\safetensors\dreamshaper_8.safetensors"
         self.custom_model_exists = os.path.exists(self.custom_model_path)
         
-        # Pre-calculate common values
         self.torch_dtype = torch.float16 if self.device == "cuda" else torch.float32
         
         self._initialized = True
@@ -59,7 +57,6 @@ class SharedModelManager:
                 
                 def load_models():
                     try:
-                        # Load the base model once
                         print("Loading base model...")
                         base_pipeline = StableDiffusionPipeline.from_single_file(
                             self.custom_model_path,
@@ -93,15 +90,22 @@ class SharedModelManager:
                         base_pipeline.scheduler = DPMSolverMultistepScheduler.from_config(base_pipeline.scheduler.config)
                         
                         try:
+                            base_pipeline.enable_xformers_memory_efficient_attention()
+                            print("xFormers memory efficient attention enabled")
+                        except Exception as e:
+                            try:
+                                base_pipeline.enable_attention_slicing("max")
+                            except Exception:
+                                pass
+                        
+                        try:
                             base_pipeline.enable_model_cpu_offload()
                             print("Model CPU offload enabled for unused components")
                         except Exception as e:
                             print(f"Model CPU offload not available: {e}")
                     
-                    # Create txt2img pipeline (use the base pipeline directly)
                     txt2img_pipeline = base_pipeline
                     
-                    # Create img2img pipeline sharing the same components
                     print("Creating img2img pipeline with shared components...")
                     img2img_pipeline = StableDiffusionImg2ImgPipeline(
                         vae=base_pipeline.vae,

@@ -4,7 +4,6 @@ import torch
 import asyncio
 import io
 import time
-import requests
 from PIL import Image
 from .model_manager import model_manager
 
@@ -29,14 +28,9 @@ class Img2Img(commands.Cog):
         """Ensure the shared model manager is initialized."""
         await model_manager.initialize_models()
     
-    async def download_image(self, url: str) -> Image.Image:
-        """Download image from URL and return PIL Image."""
-        try:
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
-            return Image.open(io.BytesIO(response.content)).convert('RGB')
-        except Exception as e:
-            raise Exception(f"Failed to download image: {e}")
+    async def _attachment_to_image(self, attachment: discord.Attachment) -> Image.Image:
+        data = await attachment.read()
+        return Image.open(io.BytesIO(data)).convert('RGB')
     
     def edit_image_sync(self, image: Image.Image, prompt: str, negative_prompt: str = None, 
                        strength: float = 0.75, num_inference_steps: int = 20, 
@@ -74,28 +68,25 @@ class Img2Img(commands.Cog):
             return img_bytes.getvalue()
     
     def _create_embed(self, title: str, description: str, color: int) -> discord.Embed:
-        """Create standardized embed."""
         return discord.Embed(title=title, description=description, color=color)
     
-    def _validate_image_attachment(self, ctx) -> str:
-        """Validate and return image URL from attachments."""
+    def _validate_image_attachment(self, ctx) -> discord.Attachment | None:
         if not ctx.message.attachments:
             return None
         
         attachment = ctx.message.attachments[0]
         filename_lower = attachment.filename.lower()
-        return attachment.url if any(filename_lower.endswith(ext) for ext in self.image_extensions) else None
+        return attachment if any(filename_lower.endswith(ext) for ext in self.image_extensions) else None
     
-    async def _process_image_edit(self, ctx, prompt: str, image_url: str, strength: float = 0.75, 
+    async def _process_image_edit(self, ctx, prompt: str, attachment: discord.Attachment, strength: float = 0.75, 
                                  steps: int = 20, guidance: float = 8, advanced_params: str = ""):
-        """Consolidated image processing logic."""
         desc = f"**Prompt:** {prompt}{advanced_params}\n\n🔄 AI is working on your image...\n⏱️ This may take 30-60 seconds"
         processing_msg = await ctx.reply(embed=self._create_embed("🎨 Editing Your Image", desc, 0x0099ff))
         
         try:
-            input_image = await self.download_image(image_url)
+            input_image = await self._attachment_to_image(attachment)
         except Exception as e:
-            await processing_msg.edit(embed=self._create_embed("❌ Error", f"Failed to download image: {str(e)}", 0xff0000))
+            await processing_msg.edit(embed=self._create_embed("❌ Error", f"Failed to read image: {str(e)}", 0xff0000))
             return
         
         try:
@@ -139,8 +130,8 @@ class Img2Img(commands.Cog):
             await ctx.reply("❌ Prompt is too long. Please keep it under 500 characters.")
             return
         
-        image_url = self._validate_image_attachment(ctx)
-        if not image_url:
+        attachment = self._validate_image_attachment(ctx)
+        if not attachment:
             await ctx.reply("❌ Please attach a valid image file (PNG, JPG, JPEG, GIF, BMP, or WebP).")
             return
         
@@ -149,7 +140,7 @@ class Img2Img(commands.Cog):
             await ctx.reply(embed=self._create_embed("⏳ Image Editing Queue", desc, 0xffaa00))
         
         async with self.generation_lock:
-            await self._process_image_edit(ctx, prompt, image_url)
+            await self._process_image_edit(ctx, prompt, attachment)
     
     @commands.command(name='edit_advanced')
     @commands.cooldown(1, 60, commands.BucketType.user)
@@ -170,7 +161,6 @@ class Img2Img(commands.Cog):
             await ctx.reply("🔄 AI img2img model is still loading, please wait a moment and try again.")
             return
         
-        # Optimized parameter parsing - single pass
         parts = params.split('--')
         prompt = parts[0].strip()
         
@@ -178,10 +168,8 @@ class Img2Img(commands.Cog):
             await ctx.reply("❌ Please provide a prompt for image editing.")
             return
         
-        # Default values
         strength, steps, guidance = 0.75, 20, 8
         
-        # Single-pass parameter parsing with optimized validation
         param_processors = {
             'strength': (lambda x: max(0.1, min(1.0, float(x))), 'strength'),
             'steps': (lambda x: max(10, min(50, int(x))), 'steps'),
@@ -195,13 +183,19 @@ class Img2Img(commands.Cog):
                 if param in param_processors:
                     try:
                         processor, _ = param_processors[param]
-                        locals()[param] = processor(value_str)
+                        value = processor(value_str)
+                        if param == 'strength':
+                            strength = value
+                        elif param == 'steps':
+                            steps = value
+                        elif param == 'guidance':
+                            guidance = value
                     except ValueError:
                         await ctx.reply(f"❌ Invalid {param} value. Use --{param} [valid range]")
                         return
         
-        image_url = self._validate_image_attachment(ctx)
-        if not image_url:
+        attachment = self._validate_image_attachment(ctx)
+        if not attachment:
             await ctx.reply("❌ Please attach a valid image file (PNG, JPG, JPEG, GIF, BMP, or WebP).")
             return
         
@@ -212,7 +206,7 @@ class Img2Img(commands.Cog):
         advanced_params = f"\n**Strength:** {strength}\n**Steps:** {steps}\n**Guidance:** {guidance}"
         
         async with self.generation_lock:
-            await self._process_image_edit(ctx, prompt, image_url, strength, steps, guidance, advanced_params)
+            await self._process_image_edit(ctx, prompt, attachment, strength, steps, guidance, advanced_params)
     
     @commands.command(name='img2img_status')
     async def img2img_status(self, ctx):

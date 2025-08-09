@@ -17,7 +17,8 @@ class CustomHelpCommand(commands.Cog):
                 "!help": "Show bot commands",
                 "!roles": "Manage server roles quickly",
                 "!ping": "Check bot connection to Discord",
-                "!stats": "Display bot statistics"
+                "!stats": "Display bot statistics",
+                "!botinfo": "Display basic bot info"
             },
             "🎨 Media": {
                 "@JackyBot": "ChatGPT",
@@ -152,18 +153,18 @@ class CustomHelpCommand(commands.Cog):
             print(f"Help command error: {e}")
             await ctx.send("An error occurred displaying help. Please try again later.")
     
-    @commands.command(name="stats")
-    async def stats(self, ctx):
-        """Display bot statistics"""
+    @commands.command(name="botinfo", aliases=["info"])
+    async def botinfo(self, ctx):
+        """Display basic bot info"""
         try:
             guild_count = len(self.bot.guilds)
             user_count = sum(guild.member_count for guild in self.bot.guilds)
             uptime = discord.utils.utcnow() - self.bot.start_time if hasattr(self.bot, 'start_time') else "Unknown"
             
             embed = discord.Embed(
-                title="Bot Statistics",
+                title="Bot Info",
                 color=0x2b2d31,
-                description="Current bot performance and usage statistics"
+                description="Current bot performance and usage summary"
             )
             
             embed.add_field(name="Servers", value=str(guild_count), inline=True)

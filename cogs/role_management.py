@@ -1,10 +1,20 @@
 import asyncio
 import discord
 from discord.ext import commands
-from discord import app_commands
-from typing import List, Optional
+from typing import List
 import json
 import os
+
+
+def get_manageable_roles(guild: discord.Guild) -> List[discord.Role]:
+    bot_member = guild.me
+    bot_position = bot_member.top_role.position if bot_member else 0
+    roles = [
+        r for r in guild.roles
+        if r.name != "@everyone" and not r.managed and r.position < bot_position
+    ]
+    roles.sort(key=lambda r: r.position, reverse=True)
+    return roles[:25]
 
 class RoleManagementView(discord.ui.View):
     def __init__(self, cog, guild: discord.Guild):
@@ -38,18 +48,9 @@ class RoleSelect(discord.ui.Select):
         self.current_auto_roles = set(current_auto_roles)
         self.cog = cog
         
-        # Cache bot member and role position
-        bot_member = guild.me
-        bot_position = bot_member.top_role.position if bot_member else 0
-        
         options = []
-        # Pre-filter and sort roles in single pass
-        manageable_roles = [r for r in guild.roles 
-                          if r.name != "@everyone" and not r.managed and 
-                          r.position < bot_position]
-        manageable_roles.sort(key=lambda r: r.position, reverse=True)
-        
-        for role in manageable_roles[:25]:  # Limit to 25 upfront
+        manageable_roles = get_manageable_roles(guild)
+        for role in manageable_roles:
             emoji = "✅" if role.id in self.current_auto_roles else "⭕"
             member_count = sum(1 for m in role.members if not m.bot)
             
@@ -81,7 +82,6 @@ class RoleSelect(discord.ui.Select):
             )
             return
             
-        # Toggle roles using set operations for O(1) lookups
         current_auto_roles = self.current_auto_roles.copy()
         for role_id in (int(rid) for rid in self.values):
             if role_id in current_auto_roles:
@@ -92,8 +92,6 @@ class RoleSelect(discord.ui.Select):
         await self.cog.save_auto_roles(self.guild.id, list(current_auto_roles))
         
         view = AutoRoleView(self.cog, self.guild)
-        
-        # Batch role lookups
         role_names = [role.name for role in self.guild.roles if role.id in current_auto_roles]
         
         embed = discord.Embed(
@@ -128,21 +126,13 @@ class AutoRoleView(discord.ui.View):
         await interaction.response.edit_message(embed=embed, view=view)
 
 class BulkRoleSelect(discord.ui.Select):
-    def __init__(self, guild: discord.Guild):
+    def __init__(self, guild: discord.Guild, cog):
         self.guild = guild
+        self.cog = cog
         
-        # Cache bot member and role position
-        bot_member = guild.me
-        bot_position = bot_member.top_role.position if bot_member else 0
-        
-        # Pre-filter and sort roles in single pass
-        manageable_roles = [r for r in guild.roles 
-                          if r.name != "@everyone" and not r.managed and 
-                          r.position < bot_position]
-        manageable_roles.sort(key=lambda r: r.position, reverse=True)
-        
+        manageable_roles = get_manageable_roles(guild)
         options = []
-        for role in manageable_roles[:25]:  # Limit to 25 upfront
+        for role in manageable_roles:
             member_count = sum(1 for m in role.members if not m.bot)
             options.append(discord.SelectOption(
                 label=role.name[:100],
@@ -177,7 +167,7 @@ class BulkRoleSelect(discord.ui.Select):
             await interaction.response.send_message("Role not found!", ephemeral=True)
             return
         
-        view = BulkRoleActionView(self.guild, role)
+        view = BulkRoleActionView(self.cog, self.guild, role)
         member_count = sum(1 for m in role.members if not m.bot)
         
         embed = discord.Embed(
@@ -189,8 +179,9 @@ class BulkRoleSelect(discord.ui.Select):
         await interaction.response.edit_message(embed=embed, view=view)
 
 class BulkRoleActionView(discord.ui.View):
-    def __init__(self, guild: discord.Guild, role: discord.Role):
+    def __init__(self, cog, guild: discord.Guild, role: discord.Role):
         super().__init__(timeout=300)
+        self.cog = cog
         self.guild = guild
         self.role = role
     
@@ -201,7 +192,6 @@ class BulkRoleActionView(discord.ui.View):
         if not self.guild.chunked:
             await self.guild.chunk(cache=True)
         
-        # Pre-compute role membership using set for O(1) lookups
         role_members = set(self.role.members)
         members_without_role = [m for m in self.guild.members if m not in role_members and not m.bot]
         
@@ -252,7 +242,7 @@ class BulkRoleActionView(discord.ui.View):
     
     @discord.ui.button(label="Back", style=discord.ButtonStyle.gray, emoji="⬅️")
     async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        view = BulkRoleView(None, self.guild)
+        view = BulkRoleView(self.cog, self.guild)
         embed = discord.Embed(
             title="Bulk Role Operations",
             description="Add or remove a role from all members in the server.",
@@ -269,13 +259,11 @@ class ConfirmationView(discord.ui.View):
         self.members = members
     
     async def process_members_in_batches(self, members: List[discord.Member], batch_size: int = 10):
-        """Process members in concurrent batches with optimized rate limiting"""
         success_count = error_count = 0
         
         for i in range(0, len(members), batch_size):
             batch = members[i:i + batch_size]
             
-            # Create tasks for this batch
             if self.action == "add":
                 tasks = [m.add_roles(self.role, reason="Bulk role operation") for m in batch]
             else:
@@ -283,7 +271,6 @@ class ConfirmationView(discord.ui.View):
             
             results = await asyncio.gather(*tasks, return_exceptions=True)
             
-            # Count results
             for result in results:
                 if isinstance(result, Exception):
                     error_count += 1
@@ -362,7 +349,7 @@ class BulkRoleView(discord.ui.View):
         super().__init__(timeout=300)
         self.cog = cog
         self.guild = guild
-        self.add_item(BulkRoleSelect(guild))
+        self.add_item(BulkRoleSelect(guild, cog))
     
     @discord.ui.button(label="Back", style=discord.ButtonStyle.gray, emoji="⬅️")
     async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -381,7 +368,6 @@ class RoleManagement(commands.Cog):
         self.auto_roles = self.load_auto_roles()
     
     def load_auto_roles(self) -> dict:
-        """Load auto-roles from JSON file"""
         if os.path.exists(self.auto_roles_file):
             try:
                 with open(self.auto_roles_file, 'r') as f:
@@ -391,20 +377,17 @@ class RoleManagement(commands.Cog):
         return {}
     
     async def save_auto_roles(self, guild_id: int, role_ids: List[int]):
-        """Save auto-roles to JSON file"""
         self.auto_roles[str(guild_id)] = role_ids
         os.makedirs(os.path.dirname(self.auto_roles_file), exist_ok=True)
         with open(self.auto_roles_file, 'w') as f:
             json.dump(self.auto_roles, f, indent=2)
     
     def get_auto_roles(self, guild_id: int) -> List[int]:
-        """Get auto-roles for a specific guild"""
         return self.auto_roles.get(str(guild_id), [])
     
     @commands.command(name="roles")
     @commands.has_permissions(administrator=True)
     async def role_management(self, ctx):
-        """Main role management command"""
         if not ctx.guild.me.guild_permissions.manage_roles:
             await ctx.reply("I need the 'Manage Roles' permission to use this command.")
             return
@@ -423,12 +406,10 @@ class RoleManagement(commands.Cog):
     
     @commands.Cog.listener()
     async def on_member_join(self, member):
-        """Automatically assign roles to new members"""
         auto_role_ids = self.get_auto_roles(member.guild.id)
         if not auto_role_ids:
             return
         
-        # Cache bot top role position
         bot_top_position = member.guild.me.top_role.position
         
         roles_to_add = []

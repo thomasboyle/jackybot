@@ -11,13 +11,13 @@ class ImageGeneration(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.generation_lock = asyncio.Lock()
+        self.default_negative_prompt = "blurry, bad quality, distorted, deformed, low resolution, watermark, text, signature"
+        self.allowed_sizes = {(512, 512), (512, 768), (768, 512), (640, 640)}
         
-        # Initialize the shared model manager
         asyncio.create_task(self._ensure_model_loaded())
         
     def cog_unload(self):
         """Clean up resources when cog is unloaded."""
-        # Note: We don't cleanup the shared model manager here as other cogs might be using it
         pass
     
     async def _ensure_model_loaded(self):
@@ -33,7 +33,7 @@ class ImageGeneration(commands.Cog):
             raise Exception("Model not loaded")
         
         if negative_prompt is None:
-            negative_prompt = "blurry, bad quality, distorted, deformed, low resolution, watermark, text, signature"
+            negative_prompt = self.default_negative_prompt
         
         with torch.inference_mode():
             result = pipeline(
@@ -50,7 +50,6 @@ class ImageGeneration(commands.Cog):
             
             img_bytes = io.BytesIO()
             image.save(img_bytes, format='PNG', optimize=True)
-            img_bytes.seek(0)
             
             return img_bytes.getvalue()
     
@@ -184,8 +183,7 @@ class ImageGeneration(commands.Cog):
             size_match = re.search(r'size=(\d+)x(\d+)', params)
             if size_match:
                 width, height = int(size_match.group(1)), int(size_match.group(2))
-                allowed_sizes = [(512, 512), (512, 768), (768, 512), (640, 640)]
-                if (width, height) not in allowed_sizes:
+                if (width, height) not in self.allowed_sizes:
                     width, height = 512, 512
             else:
                 width, height = 512, 512
