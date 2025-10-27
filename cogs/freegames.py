@@ -25,12 +25,9 @@ class EpicGamesCog(commands.Cog):
         self.save_announced_games()
 
     async def cog_load(self):
-        """Called when the cog is loaded - start the task here"""
-        # Populate active_games on startup to prevent duplicate announcements
-        await self.bot.wait_until_ready()
-        await self.populate_active_games_on_startup()
-        if not self.check_free_games.is_running():
-            self.check_free_games.start()
+        """Called when the cog is loaded"""
+        # Task will start automatically via before_loop when bot is ready
+        pass
 
     def load_announced_games(self):
         try:
@@ -210,6 +207,8 @@ class EpicGamesCog(commands.Cog):
     async def before_check_free_games(self):
         await self.bot.wait_until_ready()
         print("Epic Games task started")
+        # Populate active_games on startup to prevent duplicate announcements
+        await self.populate_active_games_on_startup()
 
     @check_free_games.error
     async def check_free_games_error(self, error):
