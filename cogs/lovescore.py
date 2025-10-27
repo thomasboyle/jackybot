@@ -29,10 +29,14 @@ class LoveCog(commands.Cog):
     def _preload_assets(self):
         # Preload assets in a separate thread
         self.font = ImageFont.truetype("arial.ttf", 36)
-        
+
         # Load and optimize heart image
-        heart = Image.open(os.path.join("assets", "images", "heart.png"))
-        self.heart_image = heart.convert("RGBA").resize((120, 120), Image.LANCZOS)
+        heart_path = os.path.join("assets", "images", "heart.png")
+        try:
+            heart = Image.open(heart_path)
+            self.heart_image = heart.convert("RGBA").resize((120, 120), Image.LANCZOS)
+        except (OSError, FileNotFoundError) as e:
+            raise OSError(f"Could not load heart image from {heart_path}: {e}. Make sure the file exists and is accessible.")
         
         # Create background once
         self.background = Image.new('RGBA', (600, 400), color=(255, 255, 255, 255))
