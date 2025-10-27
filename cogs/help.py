@@ -22,7 +22,9 @@ class CustomHelpCommand(commands.Cog):
             },
             "🎨 Media": {
                 "@JackyBot": "ChatGPT",
-                "!create": "AI Image Generation",
+                "!create": "AI Image Generation (SDXL-Lightning - ultra-fast 4-step)",
+                "!create_advanced": "Advanced image generation with size options",
+                "!edit": "AI image editing (attach an image)",
                 "!quote": "Reply to a message to create a meme quote",
                 "!avatar": "Fullscreen user avatar"
             },
@@ -52,6 +54,10 @@ class CustomHelpCommand(commands.Cog):
             "😂 Meme Templates": {
                 "!punisher": "Punisher meme template",
                 "!homelander": "Homelander meme template"
+            },
+            "💡 Suggestions": {
+                "!suggestions": "Create a suggestion request (Admin only)",
+                "!clear_suggestions": "Clear suggestion data (Admin only)"
             }
         }
     

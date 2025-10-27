@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Model cache (will be re-downloaded on server)
+cache/
+
+# Local configuration
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+*.mp3
+
+# Batch files (Windows-specific)
+*.bat
+*.lnk
+
+# Deprecated code
+Deprecated Cogs/
+
+# Documentation and plan files
+*.md
+!SERVER_SETUP.md
+
+# Lock files (if using uv locally but pip in container)
+uv.lock
+
+# Test files
+test_*
+tests/
+

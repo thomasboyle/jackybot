@@ -12,9 +12,7 @@ class ImageGeneration(commands.Cog):
         self.bot = bot
         self.generation_lock = asyncio.Lock()
         self.default_negative_prompt = "blurry, bad quality, distorted, deformed, low resolution, watermark, text, signature"
-        self.allowed_sizes = {(512, 512), (512, 768), (768, 512), (640, 640)}
-        
-        asyncio.create_task(self._ensure_model_loaded())
+        self.allowed_sizes = {(512, 512), (512, 768), (768, 512), (640, 640), (800, 800)}
         
     def cog_unload(self):
         """Clean up resources when cog is unloaded."""
@@ -24,9 +22,9 @@ class ImageGeneration(commands.Cog):
         """Ensure the shared model manager is initialized."""
         await model_manager.initialize_models()
     
-    def generate_image_sync(self, prompt: str, negative_prompt: str = None, 
-                          width: int = 512, height: int = 512, 
-                          num_inference_steps: int = 20, guidance_scale: float = 8) -> bytes:
+    def generate_image_sync(self, prompt: str, negative_prompt: str = None,
+                          width: int = 800, height: int = 800,
+                          num_inference_steps: int = 5, guidance_scale: float = 0) -> bytes:
         """Synchronous image generation function."""
         pipeline = model_manager.get_txt2img_pipeline()
         if not pipeline:
@@ -57,13 +55,22 @@ class ImageGeneration(commands.Cog):
     @commands.cooldown(1, 30, commands.BucketType.user)
     async def create_image(self, ctx, *, prompt: str):
         """Generate an AI image using Stable Diffusion 1.5.
-        
+
         Usage: !create [your prompt here]
         Example: !create a beautiful sunset over mountains
         """
+        # Load model on demand if not loaded
         if not model_manager.is_model_loaded():
-            await ctx.reply("🔄 AI model is still loading, please wait a moment and try again.")
-            return
+            loading_msg = await ctx.reply("🔄 Loading AI model... This may take a while.")
+            try:
+                await model_manager.initialize_models()
+                if not model_manager.is_model_loaded():
+                    await loading_msg.edit(content="❌ Failed to load AI model. Please try again later.")
+                    return
+                await loading_msg.edit(content="✅ Model loaded! Generating image...")
+            except Exception as e:
+                await loading_msg.edit(content=f"❌ Error loading model: {str(e)}")
+                return
         
         prompt = prompt.strip()
         if not prompt:
@@ -120,7 +127,13 @@ class ImageGeneration(commands.Cog):
                     pass
                 
                 await ctx.reply(embed=success_embed, file=file)
-                
+
+                # Auto-unload model after successful generation to free GPU memory
+                try:
+                    model_manager.cleanup_models()
+                except Exception as cleanup_error:
+                    print(f"Warning: Failed to cleanup model: {cleanup_error}")
+
             except Exception as e:
                 error_embed = discord.Embed(
                     title="❌ Generation Failed",
@@ -141,25 +154,35 @@ class ImageGeneration(commands.Cog):
                 
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
+                    torch.cuda.synchronize()  # Ensure all operations complete
                     gc.collect()
     
     @commands.command(name='create_advanced')
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def create_image_advanced(self, ctx, *, params: str):
         """Advanced image generation with custom parameters.
-        
-        Usage: !create_advanced prompt="your prompt" negative="negative prompt" steps=25 guidance=7.5 size=512x512
-        
+
+        Usage: !create_advanced prompt="your prompt" negative="negative prompt" steps=25 guidance=7.5 size=800x800
+
         Parameters:
         - prompt: Your image description (required)
         - negative: What to avoid in the image (optional)
         - steps: Number of inference steps (10-50, default: 20)
         - guidance: Guidance scale (1-20, default: 7.5)
-        - size: Image size - 512x512, 512x768, 768x512 (default: 512x512)
+        - size: Image size - 512x512, 512x768, 768x512, 640x640, 800x800 (default: 800x800)
         """
+        # Load model on demand if not loaded
         if not model_manager.is_model_loaded():
-            await ctx.reply("🔄 AI model is still loading, please wait a moment and try again.")
-            return
+            loading_msg = await ctx.reply("🔄 Loading AI model... This may take a while.")
+            try:
+                await model_manager.initialize_models()
+                if not model_manager.is_model_loaded():
+                    await loading_msg.edit(content="❌ Failed to load AI model. Please try again later.")
+                    return
+                await loading_msg.edit(content="✅ Model loaded! Generating advanced image...")
+            except Exception as e:
+                await loading_msg.edit(content=f"❌ Error loading model: {str(e)}")
+                return
         
         try:
             import re
@@ -184,9 +207,9 @@ class ImageGeneration(commands.Cog):
             if size_match:
                 width, height = int(size_match.group(1)), int(size_match.group(2))
                 if (width, height) not in self.allowed_sizes:
-                    width, height = 512, 512
+                    width, height = 800, 800
             else:
-                width, height = 512, 512
+                width, height = 800, 800
             
         except Exception as e:
             await ctx.reply(f"❌ Error parsing parameters: {str(e)}\nExample: `!create_advanced prompt=\"a cat\" steps=25 guidance=8.0`")
@@ -245,7 +268,13 @@ class ImageGeneration(commands.Cog):
                     pass
                 
                 await ctx.reply(embed=success_embed, file=file)
-                
+
+                # Auto-unload model after successful generation to free GPU memory
+                try:
+                    model_manager.cleanup_models()
+                except Exception as cleanup_error:
+                    print(f"Warning: Failed to cleanup model: {cleanup_error}")
+
             except Exception as e:
                 error_embed = discord.Embed(
                     title="❌ Advanced Generation Failed",
@@ -266,6 +295,7 @@ class ImageGeneration(commands.Cog):
                 
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
+                    torch.cuda.synchronize()  # Ensure all operations complete
                     gc.collect()
     
     @commands.command(name='model_status')

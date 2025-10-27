@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  jackybot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: jackybot
+    restart: unless-stopped
+    
+    # Environment variables from .env file
+    env_file:
+      - .env
+    
+    # Volume mounts for persistent data
+    volumes:
+      - ./data:/app/data
+      - ./json:/app/json
+      - ./cache:/app/cache
+      - ./assets:/app/assets
+    
+    # Resource limits (adjust based on your server specs)
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 8G
+        reservations:
+          cpus: '2.0'
+          memory: 4G
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # Network mode (default bridge is fine for most cases)
+    network_mode: bridge
+    
+    # Set timezone (adjust to your preference)
+    environment:
+      - TZ=UTC
+

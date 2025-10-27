@@ -1,1 +1,1 @@
-{"MissingRequiredArgument": 2, "CommandInvokeError": 4, "CommandNotFound": 504, "CommandOnCooldown": 2}
+{"MissingRequiredArgument": 4, "CommandInvokeError": 16, "CommandNotFound": 677, "CommandOnCooldown": 11, "MissingPermissions": 1}

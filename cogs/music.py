@@ -1,4 +1,5 @@
 import asyncio
+import os
 import re
 from collections import deque
 import aiohttp
@@ -8,7 +9,6 @@ from discord.ext import commands
 from discord.ui import Button, View
 import time
 import logging
-import lyricsgenius
 from functools import partial, lru_cache
 import io
 
@@ -32,7 +32,6 @@ class MusicBotCog(commands.Cog):
         self.loop_mode = {}
         self.lock = asyncio.Lock()
         self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10))
-        self.genius = lyricsgenius.Genius("m4hOO0xFpuYL4Ch5diTkVSnou8QleEpb8Sd8akHbbiayNTZblrZiv4M7GVE9cW0e", timeout=5)
         
         # Optimized yt_dlp options - single instance, reused
         self.ydl = yt_dlp.YoutubeDL({
@@ -92,6 +91,23 @@ class MusicBotCog(commands.Cog):
             logger.error(f"Failed to extract info for {url}: {e}")
             return None
 
+    async def _load_queue_info(self, queue_item, video_url):
+        """Load video info in the background without blocking playback"""
+        try:
+            info = await self._extract_info_async(video_url)
+            if info:
+                # Update the queue item in-place with full info
+                queue_item['title'] = info.get('title', 'Unknown Title')
+                queue_item['duration'] = info.get('duration', 0)
+                queue_item['thumbnail'] = info.get('thumbnail', '')
+                queue_item['info_loaded'] = True
+                logger.info(f"Loaded queue info for: {queue_item['title']}")
+        except Exception as e:
+            logger.error(f"Failed to load queue info: {e}")
+            # Keep the minimal info if extraction fails
+            queue_item['title'] = 'Unknown Title'
+            queue_item['info_loaded'] = True
+
     @commands.command()
     async def play(self, ctx, *, search):
         """Optimized play command with better validation"""
@@ -108,9 +124,23 @@ class MusicBotCog(commands.Cog):
 
         guild_id = ctx.guild.id
         if voice_client.is_playing():
+            # Queue immediately with minimal info to prevent stuttering
+            queue_item = {
+                'url': video_url,
+                'title': 'Loading...',
+                'duration': 0,
+                'thumbnail': '',
+                'info_loaded': False
+            }
+
             queue = self.queues.setdefault(guild_id, deque())
-            queue.append(video_url)
-            return await ctx.reply(f"Queued #{len(queue)}")
+            queue.append(queue_item)
+            queue_position = len(queue)
+            
+            # Extract video info in the background without blocking
+            asyncio.create_task(self._load_queue_info(queue_item, video_url))
+            
+            return await ctx.reply(f"Queued #{queue_position}")
 
         await self._play_audio(ctx, video_url, voice_client)
 
@@ -287,53 +317,159 @@ class MusicBotCog(commands.Cog):
         # Play next in queue or disconnect
         queue = self.queues.get(guild_id)
         if queue:
-            next_url = queue.popleft()
+            next_item = queue.popleft()
+            next_url = next_item['url'] if isinstance(next_item, dict) else next_item
             await self._play_audio(ctx, next_url)
         elif ctx.voice_client and not ctx.voice_client.is_playing():
             await ctx.voice_client.disconnect()
 
+    def _parse_artist_title(self, title):
+        """Parse artist and title from YouTube video title"""
+        # Clean up the title first (remove brackets but keep separators)
+        cleaned = LYRICS_CLEANUP_REGEX.sub('', title)
+        cleaned = LYRICS_WHITESPACE_REGEX.sub(' ', cleaned).strip()
+
+        # Common separators for artist - title
+        separators = [' - ', ' – ', ' — ', ' | ', ' : ']
+
+        for sep in separators:
+            if sep in cleaned:
+                parts = cleaned.split(sep, 1)
+                if len(parts) == 2:
+                    # Try both orders: "Artist - Title" and "Title - Artist"
+                    artist_part = parts[0].strip()
+                    title_part = parts[1].strip()
+
+                    # Better heuristics for determining artist vs title:
+                    # 1. If first part contains commas (multiple artists), it's likely artist
+                    # 2. If first part is under 40 chars and title is under 100, it's likely artist
+                    # 3. If title part looks like a song title (shorter, no commas), it's likely title
+
+                    has_commas = ',' in artist_part
+                    artist_short = len(artist_part) < 40
+                    title_reasonable = len(title_part) < 100
+
+                    if has_commas or (artist_short and title_reasonable):
+                        return artist_part, title_part
+                    else:
+                        # Assume title - artist order
+                        return title_part, artist_part
+
+        # If no separator found, assume the whole thing is the title and we'll try multiple approaches
+        return "", cleaned
+
     async def get_lyrics(self, ctx, interaction):
-        """Optimized lyrics fetching with better cleanup"""
+        """Fetch lyrics using LyricsOVH API"""
         guild_id = ctx.guild.id
         if guild_id not in self.now_playing:
+            logger.info(f"No song playing in guild {guild_id}")
             return await interaction.response.send_message("No song is currently playing.", ephemeral=True)
-        
+
         await interaction.response.defer(ephemeral=True)
-        
+
         song_title = self.now_playing[guild_id]['title']
-        
-        # Optimized lyrics cleaning using pre-compiled regex
-        cleaned_title = LYRICS_CLEANUP_REGEX.sub('', song_title)
-        cleaned_title = LYRICS_SEPARATOR_REGEX.sub(' ', cleaned_title)
-        cleaned_title = LYRICS_WHITESPACE_REGEX.sub(' ', cleaned_title).strip()
-        
+        logger.info(f"Fetching lyrics for: '{song_title}' in guild {guild_id}")
+
+        # Parse artist and title from the song title
+        artist, title = self._parse_artist_title(song_title)
+        logger.info(f"Parsed artist: '{artist}', title: '{title}'")
+
+        # URL encode the artist and title for the API
+        from urllib.parse import quote
+        encoded_artist = quote(artist)
+        encoded_title = quote(title)
+
+        async def try_lyrics_request(try_artist, try_title, attempt_name):
+            """Try to fetch lyrics with given artist/title combination"""
+            try:
+                from urllib.parse import quote
+                encoded_artist = quote(try_artist)
+                encoded_title = quote(try_title)
+                url = f"https://api.lyrics.ovh/v1/{encoded_artist}/{encoded_title}"
+                logger.info(f"{attempt_name} - Making API request to: {url}")
+
+                async with self.session.get(url) as response:
+                    logger.info(f"{attempt_name} - Lyrics API response status: {response.status}")
+
+                    if response.status == 200:
+                        try:
+                            data = await response.json()
+                            logger.debug(f"{attempt_name} - API response data: {data}")
+                            lyrics = data.get('lyrics', '').strip()
+
+                            if lyrics:
+                                # Clean up lyrics (remove extra newlines)
+                                lyrics = LYRICS_NEWLINES_REGEX.sub('\n\n', lyrics)
+                                logger.info(f"Successfully retrieved lyrics for '{try_artist} - {try_title}' ({len(lyrics)} characters)")
+
+                                lyrics_content = f"{try_artist} - {try_title}\n\n{lyrics}"
+                                lyrics_file = io.BytesIO(lyrics_content.encode('utf-8'))
+
+                                embed = discord.Embed(
+                                    title="📝 Lyrics",
+                                    description=f"**{try_title}** by **{try_artist}**\n\nLyrics are attached as a text file above!",
+                                    color=0xFF6B35
+                                )
+
+                                file = discord.File(lyrics_file, filename=f"{try_artist} - {try_title} - Lyrics.txt")
+                                await interaction.followup.send(embed=embed, file=file, ephemeral=True)
+                                return True  # Success
+                            else:
+                                logger.warning(f"{attempt_name} - No lyrics found in API response")
+                        except Exception as json_error:
+                            logger.error(f"{attempt_name} - Failed to parse JSON response: {json_error}")
+                            response_text = await response.text()
+                            logger.debug(f"{attempt_name} - Raw response: {response_text[:500]}...")
+                    elif response.status == 404:
+                        logger.info(f"{attempt_name} - Lyrics not found (404) for '{try_artist} - {try_title}'")
+                    else:
+                        logger.warning(f"{attempt_name} - Unexpected status {response.status} for '{try_artist} - {try_title}'")
+
+                return False  # Failed
+
+            except Exception as e:
+                logger.error(f"{attempt_name} - Request failed for '{try_artist} - {try_title}': {e}")
+                return False
+
         try:
-            song = await asyncio.get_running_loop().run_in_executor(
-                None, 
-                lambda: self.genius.search_song(cleaned_title, get_full_info=False)
+            # First attempt: use parsed artist and title (only if we have an artist)
+            if artist and artist not in ["", "Various Artists", "Unknown Artist"]:
+                success = await try_lyrics_request(artist, title, "Primary attempt")
+                if success:
+                    return
+
+                # If primary attempt failed and artist contains commas (multiple artists),
+                # try with just the first artist
+                if ',' in artist:
+                    first_artist = artist.split(',')[0].strip()
+                    logger.info(f"Trying with first artist only: {first_artist}")
+                    success = await try_lyrics_request(first_artist, title, f"First artist '{first_artist}'")
+                    if success:
+                        return
+
+            # Second attempt: try with title as artist (common for well-known songs)
+            logger.info("Trying with song title as artist")
+            success = await try_lyrics_request(title, title, "Title as artist")
+            if success:
+                return
+
+            # Third attempt: try with common generic artists
+            common_artists = ["Various Artists", "Unknown Artist", "Various", "Classic", "Popular"]
+            for try_artist in common_artists:
+                logger.info(f"Trying with generic artist: {try_artist}")
+                success = await try_lyrics_request(try_artist, title, f"Generic artist '{try_artist}'")
+                if success:
+                    return
+
+            # If all attempts failed, send error message
+            logger.warning(f"All lyrics attempts failed for '{song_title}'")
+            await interaction.followup.send(
+                f"No lyrics found for this song. The lyrics database may not have this track, or it might be too new. Try searching for the official lyrics online.",
+                ephemeral=True
             )
-            
-            if not song or not song.lyrics:
-                return await interaction.followup.send("No lyrics found for this song.", ephemeral=True)
-            
-            # Optimized lyrics cleanup
-            lyrics = LYRICS_TAGS_REGEX.sub('', song.lyrics).strip()
-            lyrics = LYRICS_NEWLINES_REGEX.sub('\n\n', lyrics)
-            
-            lyrics_content = f"{song_title} - {song.artist}\n\n{lyrics}"
-            lyrics_file = io.BytesIO(lyrics_content.encode('utf-8'))
-            
-            embed = discord.Embed(
-                title="📝 Lyrics",
-                description=f"**{song_title}** by **{song.artist}**\n\nLyrics are attached as a text file above!",
-                color=0xFF6B35
-            )
-            
-            file = discord.File(lyrics_file, filename=f"{song_title} - {song.artist} - Lyrics.txt")
-            await interaction.followup.send(embed=embed, file=file, ephemeral=True)
-                
+
         except Exception as e:
-            logger.error(f"Lyrics fetch failed: {e}")
+            logger.error(f"Lyrics fetch failed for '{artist} - {title}': {e}")
             await interaction.followup.send("Failed to fetch lyrics. Please try again later.", ephemeral=True)
 
     async def _update_embed(self, ctx):
@@ -363,42 +499,37 @@ class MusicBotCog(commands.Cog):
 
     @commands.command()
     async def queue(self, ctx):
-        """Optimized queue display with async info extraction"""
+        """Display queue using cached song information"""
         guild_id = ctx.guild.id
         queue = self.queues.get(guild_id)
-        
+
         if not queue:
-            return await ctx.send("Queue is empty")
+            return await ctx.reply("Queue is empty")
 
         embed = discord.Embed(title="🎶 Queue", color=0x0000FF)
-        
-        # Process queue items asynchronously for better performance
-        tasks = []
-        for i, url in enumerate(queue, 1):
+
+        # Display queue items using cached info - no API calls needed
+        for i, item in enumerate(queue, 1):
             if i > 10:  # Limit display to first 10 items
                 embed.add_field(name=f"... and {len(queue) - 10} more", value="", inline=False)
                 break
-            tasks.append(self._extract_info_async(url))
-        
-        try:
-            infos = await asyncio.gather(*tasks, return_exceptions=True)
-            
-            for i, (url, info) in enumerate(zip(list(queue)[:10], infos), 1):
-                if isinstance(info, Exception) or not info:
-                    title = "Unknown Title"
-                    duration = 0
-                else:
-                    title = info.get('title', 'Unknown Title')
-                    duration = info.get('duration', 0)
-                
-                duration_str = self._format_time(duration)
-                embed.add_field(name=f"{i}. {title}", value=duration_str, inline=False)
-                
-        except Exception as e:
-            logger.error(f"Queue display failed: {e}")
-            return await ctx.send("Failed to display queue.")
-            
-        await ctx.send(embed=embed)
+
+            # Handle both old format (URLs) and new format (dicts) for backwards compatibility
+            if isinstance(item, dict):
+                title = item.get('title', 'Unknown Title')
+                duration = item.get('duration', 0)
+                # Show loading status for items that haven't finished loading
+                if not item.get('info_loaded', True) and title == 'Loading...':
+                    title = '⏳ Loading...'
+            else:
+                # Fallback for old queue items that are just URLs
+                title = "Unknown Title"
+                duration = 0
+
+            duration_str = self._format_time(duration) if duration > 0 else "..."
+            embed.add_field(name=f"{i}. {title}", value=duration_str, inline=False)
+
+        await ctx.reply(embed=embed)
 
     @commands.command(aliases=["nowplaying"])
     async def np(self, ctx):
