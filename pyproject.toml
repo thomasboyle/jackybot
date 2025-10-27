@@ -2,7 +2,6 @@
 name = "jackybot"
 version = "0.1.0"
 description = "JackyBot Discord bot"
-readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
   "discord.py[voice]>=2.4,<2.6",
