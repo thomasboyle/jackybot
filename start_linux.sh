@@ -1,7 +1,6 @@
 #!/bin/bash
 
 # Set terminal color to yellow
-echo -e "\033[0;33m"
 echo "Starting JackyBot..."
 echo ""
 
