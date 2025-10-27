@@ -22,7 +22,7 @@ darkdetect==0.8.0
 decorator==5.1.1
 diffusers>=0.31.0
 discord.py[voice]>=2.4,<2.6
-discord-ext-voice-recv>=0.4.0,<0.5.0
+discord-ext-voice-recv==0.4.2a145
 PyNaCl==1.5.0
 distro==1.9.0
 exceptiongroup==1.2.2
