@@ -5,20 +5,30 @@ echo -e "\033[0;33m"
 echo "Starting JackyBot..."
 echo ""
 
-# Set Hugging Face token via environment variable or .env file
-# export HF_TOKEN=your_token_here
+# Load environment variables from .env file if it exists
+if [ -f ".env" ]; then
+    echo "Loading environment variables from .env file..."
+    export $(grep -v '^#' .env | xargs)
+else
+    echo "Warning: .env file not found. Please create one with your API keys."
+    echo "See env.example for the required format."
+fi
 
-echo "Upgrading pip..."
-python3 -m pip install --upgrade pip
-echo ""
-echo "Upgrading yt-dlp..."
-pip install --upgrade --no-cache-dir yt-dlp
-echo ""
-echo "Upgrading discord.py..."
-pip install --upgrade --no-cache-dir discord.py
-echo ""
+# Check for required environment variables
+if [ -z "$DISCORD_BOT_TOKEN" ]; then
+    echo "Error: DISCORD_BOT_TOKEN environment variable not set."
+    echo "Please set it in your .env file or as an environment variable."
+    exit 1
+fi
+
+if [ -z "$GROQ_API_KEY" ]; then
+    echo "Error: GROQ_API_KEY environment variable not set."
+    echo "Please set it in your .env file or as an environment variable."
+    exit 1
+fi
+
 echo "Launching bot..."
-python3 bot.py
+uv run python3 bot.py
 
 # Reset terminal color
 echo -e "\033[0m"
