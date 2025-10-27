@@ -8,14 +8,12 @@ echo ""
 # Set Hugging Face token via environment variable or .env file
 # export HF_TOKEN=your_token_here
 
-echo "Upgrading pip..."
+echo "Ensuring pip is available..."
+python3 -m ensurepip --upgrade || python3 -c "import sys; print('pip installation check complete')"
+echo ""
+echo "Installing/upgrading dependencies..."
 python3 -m pip install --upgrade pip
-echo ""
-echo "Upgrading yt-dlp..."
-pip install --upgrade --no-cache-dir yt-dlp
-echo ""
-echo "Upgrading discord.py..."
-pip install --upgrade --no-cache-dir discord.py
+python3 -m pip install --upgrade -r requirements.txt
 echo ""
 echo "Launching bot..."
 python3 bot.py
