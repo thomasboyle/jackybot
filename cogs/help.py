@@ -8,7 +8,24 @@ class CustomHelpCommand(commands.Cog):
         self.bot = bot
         # Remove built-in help command
         bot.remove_command('help')
-        
+
+    @commands.command(name='create')
+    async def create_disabled(self, ctx, *, prompt: str = None):
+        """Disabled AI image generation command."""
+        embed = discord.Embed(
+            title="🎨 AI Image Generation Temporarily Disabled",
+            description="The AI image generation feature has been temporarily disabled due to maintenance.\n\n"
+                       "This feature will return in a future update.",
+            color=0xff6b6b
+        )
+        embed.add_field(
+            name="Alternative",
+            value="Try `!music` for AI-generated music instead!",
+            inline=False
+        )
+        embed.set_footer(text="We apologize for the inconvenience")
+        await ctx.reply(embed=embed)
+
     @lru_cache(maxsize=1)
     def get_commands_by_category(self):
         """Organize commands by category with emojis"""
@@ -22,9 +39,7 @@ class CustomHelpCommand(commands.Cog):
             },
             "🎨 Media": {
                 "@JackyBot": "ChatGPT",
-                "!create": "AI Image Generation (SDXL-Lightning - ultra-fast 4-step)",
-                "!create_advanced": "Advanced image generation with size options",
-                "!edit": "AI image editing (attach an image)",
+                "!music": "AI Music Generation (MusicGen)",
                 "!quote": "Reply to a message to create a meme quote",
                 "!avatar": "Fullscreen user avatar"
             },
