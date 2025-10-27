@@ -26,6 +26,9 @@ class EpicGamesCog(commands.Cog):
 
     async def cog_load(self):
         """Called when the cog is loaded - start the task here"""
+        # Populate active_games on startup to prevent duplicate announcements
+        await self.bot.wait_until_ready()
+        await self.populate_active_games_on_startup()
         if not self.check_free_games.is_running():
             self.check_free_games.start()
 
@@ -46,6 +49,23 @@ class EpicGamesCog(commands.Cog):
                 json.dump(dict(self.announced_games), f, indent=2)
         except Exception as e:
             print(f"Error saving announced games: {e}")
+
+    async def populate_active_games_on_startup(self):
+        """Populate active_games on startup without sending announcements"""
+        print("Populating active games on startup...")
+        games = await self.get_epic_free_games()
+        
+        if not games:
+            print("No games found during startup")
+            return
+        
+        # Populate active_games for all guilds with current free games
+        for guild in self.bot.guilds:
+            guild_id = str(guild.id)
+            for game in games:
+                self.active_games[guild_id][game['id']] = game
+        
+        print(f"Populated {len(games)} active games for {len(self.bot.guilds)} guilds")
 
     async def get_epic_free_games(self):
         try:
