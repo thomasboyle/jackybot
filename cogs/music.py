@@ -34,7 +34,7 @@ class MusicBotCog(commands.Cog):
         self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10))
         
         # Optimized yt_dlp options - single instance, reused
-        self.ydl = yt_dlp.YoutubeDL({
+        ydl_opts = {
             'format': 'bestaudio/best',
             'noplaylist': True,
             'quiet': True,
@@ -42,8 +42,25 @@ class MusicBotCog(commands.Cog):
             'default_search': 'auto',
             'source_address': '0.0.0.0',
             'extract_flat': False,
-            'cachedir': False  # Disable caching to save disk space
-        })
+            'cachedir': False,  # Disable caching to save disk space
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-us,en;q=0.5',
+                'Sec-Fetch-Mode': 'navigate',
+            }
+        }
+
+        # Use cookies from assets/cookies.txt to bypass YouTube bot detection
+        cookies_path = os.path.join(os.path.dirname(__file__), '..', 'assets', 'cookies.txt')
+        if os.path.exists(cookies_path):
+            ydl_opts['cookiefile'] = cookies_path
+            logger.info("Using cookies from assets/cookies.txt")
+        else:
+            logger.warning("No cookies.txt found in assets folder. YouTube may block requests. See SERVER_SETUP.md for cookie setup instructions.")
+
+        self.ydl = yt_dlp.YoutubeDL(ydl_opts)
         
         # Pre-defined FFmpeg options to avoid recreation
         self.ffmpeg_base_opts = {
