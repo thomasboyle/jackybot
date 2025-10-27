@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsndfile1 \
     portaudio19-dev \
     git \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
@@ -21,7 +22,10 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt && \
+    apt-get remove -y build-essential && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
 
 # Copy application files
 COPY --chown=jackybot:jackybot . .
