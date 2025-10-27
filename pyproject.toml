@@ -14,7 +14,6 @@ dependencies = [
   "yt-dlp>=2024.3",
   "pillow>=10.0",
   "imageio>=2.31",
-  "imageio-ffmpeg>=0.5",
   "ffmpeg-python>=0.2",
   "requests>=2.31",
   "beautifulsoup4>=4.12",
@@ -24,13 +23,10 @@ dependencies = [
   "playwright>=1.48",
   "packaging>=24.0",
   "torch>=2.0",
-  "diffusers>=0.31",
   "transformers>=4.45",
-  "safetensors>=0.4",
-  "huggingface-hub>=0.23",
-  "accelerate>=0.33",
   "SpeechRecognition>=3.10",
-  "PyAudio>=0.2.14",
+  "discord-ext-voice-recv>=0.5.0",
+  "scipy>=1.10",
 ]
 
 [build-system]
