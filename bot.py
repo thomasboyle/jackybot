@@ -285,9 +285,9 @@ async def shutdown(signal, loop):
 
 # Main entry point
 async def main():
-    token = os.environ.get("Discord_Bot_Token")
+    token = os.environ.get("DISCORD_BOT_TOKEN")
     if not token:
-        print("Error: Discord_Bot_Token environment variable not set.")
+        print("Error: DISCORD_BOT_TOKEN environment variable not set.")
         return
 
     loop = asyncio.get_event_loop()
