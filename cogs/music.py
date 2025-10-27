@@ -34,7 +34,7 @@ class MusicBotCog(commands.Cog):
         self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10))
         
         # Optimized yt_dlp options - single instance, reused
-        ydl_opts = {
+        self.ydl = yt_dlp.YoutubeDL({
             'format': 'bestaudio/best',
             'noplaylist': True,
             'quiet': True,
@@ -43,26 +43,7 @@ class MusicBotCog(commands.Cog):
             'source_address': '0.0.0.0',
             'extract_flat': False,
             'cachedir': False  # Disable caching to save disk space
-        }
-        
-        # Try to use cookies from browser to bypass YouTube bot detection
-        # Try browsers in order of popularity: Chrome, Edge, Firefox
-        for browser in ['chrome', 'edge', 'firefox', 'brave', 'opera', 'safari']:
-            try:
-                ydl_opts['cookiesfrombrowser'] = (browser,)
-                # Test if the browser cookies can be accessed
-                test_ydl = yt_dlp.YoutubeDL(ydl_opts)
-                logger.info(f"Successfully configured yt-dlp to use cookies from {browser}")
-                break
-            except Exception:
-                # If this browser doesn't work, try the next one
-                if 'cookiesfrombrowser' in ydl_opts:
-                    del ydl_opts['cookiesfrombrowser']
-                continue
-        else:
-            logger.warning("No browser cookies found. YouTube may block requests. Consider logging into YouTube in your browser.")
-        
-        self.ydl = yt_dlp.YoutubeDL(ydl_opts)
+        })
         
         # Pre-defined FFmpeg options to avoid recreation
         self.ffmpeg_base_opts = {
