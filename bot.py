@@ -78,6 +78,9 @@ async def cleanup_task():
 # Setup hook
 async def setup_hook():
     cog_files = [f[:-3] for f in os.listdir('./cogs') if f.endswith('.py')]
+    # Exclude AI image generation and model management cogs
+    disabled_cogs = ['image_gen', 'model_manager']
+    cog_files = [f for f in cog_files if f not in disabled_cogs]
     results = await asyncio.gather(*(bot.load_extension(f'cogs.{f}') for f in cog_files), return_exceptions=True)
     for filename, result in zip(cog_files, results):
         if isinstance(result, Exception):

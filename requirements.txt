@@ -2,7 +2,6 @@ aiofiles
 aiohappyeyeballs
 aiohttp
 aiosignal
-accelerate
 annotated-types
 anyio
 async-timeout
@@ -20,7 +19,6 @@ customtkinter
 cycler
 darkdetect
 decorator
-diffusers
 discord.py[voice]>=2.4,<2.6
 discord-ext-voice-recv==0.4.2a145
 PyNaCl
@@ -38,7 +36,6 @@ gTTS
 h11
 httpcore
 httpx
-huggingface-hub
 idna
 image-processing
 imageio
@@ -73,7 +70,6 @@ PyYAML
 pyaudio
 regex
 requests
-safetensors
 scikit-image
 scipy
 seaborn
