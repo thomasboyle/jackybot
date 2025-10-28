@@ -11,6 +11,8 @@ import time
 import logging
 from functools import partial, lru_cache
 import io
+import subprocess
+import sys
 
 # Pre-compiled regex patterns for better performance
 YOUTUBE_VIDEO_REGEX = re.compile(r"watch\?v=(\S{11})")
@@ -52,16 +54,8 @@ class MusicBotCog(commands.Cog):
             }
         }
 
-        # YouTube authentication setup (cookies only - OAuth2 no longer supported by yt-dlp)
-        cookies_path = os.path.join(os.path.dirname(__file__), '..', 'assets', 'cookies.txt')
-
-        if os.path.exists(cookies_path):
-            ydl_opts['cookiefile'] = cookies_path
-            logger.info("Using cookies from assets/cookies.txt")
-        else:
-            logger.warning("No YouTube cookies found. Limited functionality. Run setup_youtube_auth.py for cookie setup instructions.")
-
-        self.ydl = yt_dlp.YoutubeDL(ydl_opts)
+        # yt_dlp will be initialized dynamically with cookies when needed
+        self.ydl = None
         
         # Pre-defined FFmpeg options to avoid recreation
         self.ffmpeg_base_opts = {
@@ -72,11 +66,108 @@ class MusicBotCog(commands.Cog):
         # Cache for video info to reduce API calls
         self._video_info_cache = {}
 
+        # Cookie management
+        self.cookies_path = os.path.join(os.path.dirname(__file__), '..', 'assets', 'cookies.txt')
+        self.cookie_generator_script = os.path.join(os.path.dirname(__file__), '..', 'cookie_generator.py')
+        self.last_cookie_check = 0
+        self.cookie_check_interval = 300  # Check cookies every 5 minutes
+
     async def cog_unload(self):
         """Cleanup resources on cog unload"""
         await self.session.close()
         # Clear all caches
         self._video_info_cache.clear()
+
+    def _cookies_exist_and_recent(self):
+        """Check if cookies file exists and is reasonably recent (< 24 hours)"""
+        if not os.path.exists(self.cookies_path):
+            return False
+
+        # Check file modification time
+        file_age = time.time() - os.path.getmtime(self.cookies_path)
+        return file_age < 86400  # 24 hours in seconds
+
+    async def _ensure_cookies_available(self):
+        """Ensure cookies are available, generating them if necessary"""
+        current_time = time.time()
+
+        # Skip check if we checked recently
+        if current_time - self.last_cookie_check < self.cookie_check_interval:
+            if os.path.exists(self.cookies_path):
+                return True
+            # Force check if no cookies exist
+        else:
+            self.last_cookie_check = current_time
+
+        # Check if cookies exist and are recent
+        if self._cookies_exist_and_recent():
+            logger.info("Using existing recent cookies")
+            return True
+
+        # Generate new cookies
+        logger.info("Generating new YouTube cookies...")
+        try:
+            # Run the cookie generator script
+            result = await asyncio.get_event_loop().run_in_executor(
+                None,
+                partial(subprocess.run,
+                       [sys.executable, self.cookie_generator_script],
+                       capture_output=True,
+                       text=True,
+                       cwd=os.path.dirname(self.cookie_generator_script))
+            )
+
+            if result.returncode == 0:
+                logger.info("Cookies generated successfully")
+                # Recreate yt_dlp instance with new cookies
+                await self._recreate_ydl_with_cookies()
+                return True
+            else:
+                logger.error(f"Cookie generation failed: {result.stderr}")
+                return False
+
+        except Exception as e:
+            logger.error(f"Failed to generate cookies: {e}")
+            return False
+
+    async def _recreate_ydl_with_cookies(self):
+        """Recreate yt_dlp instance with current cookies"""
+        try:
+            # Create new yt_dlp options with cookies
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'noplaylist': True,
+                'quiet': True,
+                'no_warnings': True,
+                'default_search': 'auto',
+                'source_address': '0.0.0.0',
+                'extract_flat': False,
+                'cachedir': False,
+                'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'http_headers': {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'Accept-Language': 'en-us,en;q=0.5',
+                    'Sec-Fetch-Mode': 'navigate',
+                }
+            }
+
+            # Add cookies if they exist
+            if os.path.exists(self.cookies_path):
+                ydl_opts['cookiefile'] = self.cookies_path
+                logger.info("Recreated yt_dlp with cookies")
+            else:
+                logger.warning("Recreated yt_dlp without cookies")
+
+            # Create new yt_dlp instance
+            self.ydl = yt_dlp.YoutubeDL(ydl_opts)
+
+            # Clear video info cache since cookies may have changed access
+            self._video_info_cache.clear()
+            logger.info("Video info cache cleared due to cookie refresh")
+
+        except Exception as e:
+            logger.error(f"Failed to recreate yt_dlp instance: {e}")
 
     async def get_video_url(self, search_query):
         """Optimized video URL retrieval with better error handling"""
@@ -95,13 +186,17 @@ class MusicBotCog(commands.Cog):
         """Async wrapper for yt-dlp info extraction with caching"""
         if url in self._video_info_cache:
             return self._video_info_cache[url]
-            
+
+        # Ensure yt_dlp is initialized with current cookies
+        if self.ydl is None:
+            await self._recreate_ydl_with_cookies()
+
         try:
             info = await asyncio.get_running_loop().run_in_executor(
                 None, partial(self.ydl.extract_info, url, download=False)
             )
             info = info.get('entries', [info])[0]
-            
+
             # Cache the result to avoid repeated API calls
             self._video_info_cache[url] = info
             return info
@@ -131,6 +226,11 @@ class MusicBotCog(commands.Cog):
         """Optimized play command with better validation"""
         if not ctx.author.voice:
             return await ctx.send("Join a voice channel first.")
+
+        # Ensure cookies are available before attempting to search/play
+        cookies_available = await self._ensure_cookies_available()
+        if not cookies_available:
+            await ctx.send("⚠️ Authentication setup in progress. YouTube access may be limited.")
 
         video_url = await self.get_video_url(search)
         if not video_url:

@@ -75,3 +75,4 @@ urllib3
 yarl
 yt-dlp
 zipp
+playwright

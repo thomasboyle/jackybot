@@ -26,16 +26,6 @@ if [ -z "$GROQ_API_KEY" ]; then
     exit 1
 fi
 
-# Check YouTube authentication for music bot
-echo "Checking YouTube authentication..."
-if [ -f "assets/cookies.txt" ]; then
-    echo "YouTube cookies found - Full music functionality available"
-else
-    echo "Warning: No YouTube cookies found."
-    echo "Music bot will have limited functionality."
-    echo "Run 'python setup_youtube_auth.py' locally to extract browser cookies."
-fi
-
 echo "Launching bot..."
 uv run python3 bot.py
 
