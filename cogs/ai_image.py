@@ -3,188 +3,89 @@ from discord.ext import commands
 import torch
 from diffusers import StableDiffusionPipeline
 import io
-from PIL import Image
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import gc
 import psutil
-import os
-
 
 class AIImageCog(commands.Cog):
-    """CPU-only text-to-image generation cog using Tiny SD model"""
-
     def __init__(self, bot):
         self.bot = bot
-        self.executor = ThreadPoolExecutor(max_workers=1)  # Single worker for memory control
+        self.executor = ThreadPoolExecutor(max_workers=1)
         self.model = None
-        self.model_loaded = False
-        self.generation_lock = asyncio.Lock()
+        self.lock = asyncio.Lock()
 
-    async def load_model(self):
-        """Load Tiny SD model on first use"""
-        if self.model_loaded:
-            return True
-
-        try:
-            # Check available RAM before loading
-            memory = psutil.virtual_memory()
-            available_gb = memory.available / (1024**3)
-
-            if available_gb < 0.5:
-                raise MemoryError("Insufficient RAM (< 512MB available)")
-
-            # Load Tiny SD model - CPU-only inference
-            self.model = StableDiffusionPipeline.from_pretrained(
-                "segmind/tiny-sd",
-                torch_dtype=torch.float32,  # Use float32 for CPU
-                device="cpu",  # Explicitly set to CPU
-                low_cpu_mem_usage=True  # Optimize for low memory
-            )
-
-            # Ensure all model components are on CPU
-            self.model = self.model.to("cpu")
-
-            # Enable maximum memory efficiency for CPU-only inference
-            self.model.enable_attention_slicing(slice_size="max")
-            self.model.enable_vae_slicing()
-
-            self.model_loaded = True
-            return True
-
-        except Exception as e:
-            print(f"Failed to load Tiny SD model: {e}")
-            return False
-
-    def generate_image_sync(self, prompt: str, width: int = 512, height: int = 512):
-        """Synchronous image generation function"""
-        try:
-            # Force garbage collection before generation
-            gc.collect()
-
-            # Generate image with TinyLDM
-            with torch.no_grad():
-                # Set manual seed for reproducible results
-                torch.manual_seed(42)
-
-                # Generate image on CPU
-                image = self.model(
-                    prompt=prompt,
-                    width=width,
-                    height=height,
-                    num_inference_steps=10,  # Very few steps for speed
-                    guidance_scale=7.5,
-                    output_type="pil",
-                    generator=torch.Generator("cpu").manual_seed(42)  # CPU generator
-                ).images[0]
-
-            # Convert to bytes
-            img_buffer = io.BytesIO()
-            image.save(img_buffer, format='PNG')
-            img_buffer.seek(0)
-
-            # Force cleanup
-            del image
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            gc.collect()
-
-            return img_buffer
-
-        except Exception as e:
-            raise e
+    def generate_image_sync(self, prompt, width=512, height=512):
+        gc.collect()
+        with torch.no_grad():
+            torch.manual_seed(42)
+            image = self.model(
+                prompt=prompt, width=width, height=height,
+                num_inference_steps=10, guidance_scale=7.5,
+                output_type="pil", generator=torch.Generator("cpu").manual_seed(42)
+            ).images[0]
+        buffer = io.BytesIO()
+        image.save(buffer, format='PNG')
+        buffer.seek(0)
+        del image
+        gc.collect()
+        return buffer
 
     @commands.command(name='imagine')
-    async def create_image(self, ctx, *, args: str = ""):
-        """Generate an image from text prompt. Usage: !imagine [prompt] 512x512"""
-
-        # Parse arguments
+    async def create_image(self, ctx, *, args=""):
         if not args.strip():
-            await ctx.reply("Please provide a prompt. Usage: `!imagine [prompt] 512x512`")
-            return
+            return await ctx.reply("Usage: `!imagine [prompt] 512x512`")
 
-        # Split prompt and resolution
         parts = args.rsplit(' ', 2)
         if len(parts) >= 2 and 'x' in parts[-1]:
             prompt = ' '.join(parts[:-1])
             try:
                 width, height = map(int, parts[-1].split('x'))
-                if width > 1024 or height > 1024 or width < 256 or height < 256:
-                    await ctx.reply("Resolution must be between 256x256 and 1024x1024")
-                    return
+                if not (256 <= width <= 1024 and 256 <= height <= 1024):
+                    return await ctx.reply("Resolution must be 256x256 to 1024x1024")
             except ValueError:
-                await ctx.reply("Invalid resolution format. Use format like `512x512`")
-                return
+                return await ctx.reply("Invalid resolution format")
         else:
             prompt = args
             width, height = 512, 512
 
-        # Check prompt length
         if len(prompt) > 200:
-            await ctx.reply("Prompt too long (max 200 characters)")
-            return
+            return await ctx.reply("Prompt too long (max 200 chars)")
 
-        async with self.generation_lock:
-            # Send initial message
-            message = await ctx.reply("🎨 Generating image... This may take 30-60 seconds.")
-
+        async with self.lock:
+            message = await ctx.reply("Generating image... (30-60s)")
             try:
-                # Load model if not loaded
-                if not await self.load_model():
-                    await message.edit(content="❌ Failed to load AI model. Please try again later.")
-                    return
+                if not self.model:
+                    memory = psutil.virtual_memory()
+                    if memory.available / (1024**3) < 0.5:
+                        return await message.edit(content="Low memory")
+                    self.model = StableDiffusionPipeline.from_pretrained(
+                        "segmind/tiny-sd", torch_dtype=torch.float16,
+                        device="cpu", low_cpu_mem_usage=True
+                    ).to("cpu")
+                    self.model.enable_attention_slicing(slice_size="max")
+                    self.model.enable_vae_slicing()
 
-                # Check memory before generation
                 memory = psutil.virtual_memory()
-                if memory.available / (1024**3) < 0.3:  # Less than 300MB available
-                    await message.edit(content="❌ Insufficient memory available. Please try again later.")
-                    return
+                if memory.available / (1024**3) < 0.3:
+                    return await message.edit(content="Low memory")
 
-                # Generate image in thread pool to avoid blocking
-                img_buffer = await asyncio.get_event_loop().run_in_executor(
-                    self.executor,
-                    self.generate_image_sync,
-                    prompt,
-                    width,
-                    height
+                buffer = await asyncio.get_event_loop().run_in_executor(
+                    self.executor, self.generate_image_sync, prompt, width, height
                 )
 
-                # Send the image
-                file = discord.File(img_buffer, filename=f"generated_{width}x{height}.png")
+                file = discord.File(buffer, f"generated_{width}x{height}.png")
                 embed = discord.Embed(
-                    title="🎨 Generated Image",
-                    description=f"**Prompt:** {prompt}\n**Resolution:** {width}x{height}",
+                    title="Generated Image",
+                    description=f"**Prompt:** {prompt}\n**Size:** {width}x{height}",
                     color=0x00ff00
                 )
                 embed.set_image(url=f"attachment://generated_{width}x{height}.png")
-
                 await message.edit(content=None, embed=embed, attachments=[file])
 
-            except asyncio.TimeoutError:
-                await message.edit(content="❌ Generation timed out. Please try again.")
-            except MemoryError:
-                await message.edit(content="❌ Insufficient memory. Please try again later.")
             except Exception as e:
-                print(f"Image generation error: {e}")
-                await message.edit(content="❌ Failed to generate image. Please try again.")
-
-    @commands.command(name='model_status')
-    async def model_status(self, ctx):
-        """Check if the AI model is loaded and show memory usage"""
-        memory = psutil.virtual_memory()
-        memory_usage = f"{memory.used / (1024**3):.1f}GB / {memory.total / (1024**3):.1f}GB"
-
-        status = "✅ Loaded" if self.model_loaded else "❌ Not loaded"
-        embed = discord.Embed(
-            title="🤖 AI Model Status",
-            color=0x0099ff
-        )
-        embed.add_field(name="Model Status", value=status, inline=True)
-        embed.add_field(name="Memory Usage", value=memory_usage, inline=True)
-        embed.add_field(name="Available RAM", value=f"{memory.available / (1024**3):.1f}GB", inline=True)
-
-        await ctx.reply(embed=embed)
-
+                print(f"Error: {e}")
+                await message.edit(content="Generation failed")
 
 async def setup(bot):
     await bot.add_cog(AIImageCog(bot))
