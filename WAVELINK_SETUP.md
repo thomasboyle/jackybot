@@ -9,10 +9,17 @@ This guide explains how to set up the new wavelink-based music cog for VPS deplo
 
 ## Step 1: Install Lavalink
 
-Lavalink is required for wavelink to work. Run the provided setup script:
+Lavalink is required for wavelink to work. Use the provided setup script:
 
+**For Linux/Mac (VPS):**
 ```bash
+chmod +x lavalink_setup.sh
 ./lavalink_setup.sh
+```
+
+**For Windows (local testing):**
+```batch
+lavalink_setup.bat
 ```
 
 This will:
@@ -52,31 +59,32 @@ pip install wavelink>=2.0.0
 
 ## Step 5: Run Lavalink in Background
 
-For production, run Lavalink as a background service:
+The setup script creates several ways to run Lavalink:
 
+**Quick Start:**
 ```bash
-# Using screen
-screen -S lavalink
-java -jar Lavalink.jar
+# Linux/Mac
+./start_lavalink.sh
 
-# Detach with Ctrl+A, D
-
-# Or using systemd (create /etc/systemd/system/lavalink.service)
-[Unit]
-Description=Lavalink
-After=network.target
-
-[Service]
-Type=simple
-User=youruser
-WorkingDirectory=/path/to/lavalink
-ExecStart=/usr/bin/java -jar Lavalink.jar
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
+# Windows
+start_lavalink.bat
 ```
+
+**For Production (Linux):**
+```bash
+# Using the generated systemd service
+sudo cp lavalink.service /etc/systemd/system/
+sudo systemctl enable lavalink
+sudo systemctl start lavalink
+
+# Or using screen
+screen -S lavalink
+./start_lavalink.sh
+# Detach with Ctrl+A, D
+```
+
+**For Production (Windows):**
+Use Windows Services or run in a separate command window. For 24/7 operation, consider using a process manager like NSSM.
 
 ## Features
 
