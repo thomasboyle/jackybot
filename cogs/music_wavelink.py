@@ -88,7 +88,7 @@ class MusicWavelinkCog(commands.Cog):
         track = payload.track
 
         # Create embed for now playing
-        embed = self._create_now_playing_embed(track, player)
+        embed = self._create_now_playing_embed(track, player, player.position)
         view = self._create_controls(player)
 
         message = await player.channel.send(embed=embed, view=view)
@@ -120,33 +120,29 @@ class MusicWavelinkCog(commands.Cog):
             next_track = player.queue.get()
             await player.play(next_track)
 
-    def _create_now_playing_embed(self, track: wavelink.Playable, player: wavelink.Player) -> discord.Embed:
-        """Create now playing embed"""
+    def _create_now_playing_embed(self, track: wavelink.Playable, player: wavelink.Player, elapsed=0) -> discord.Embed:
+        """Create now playing embed with elapsed time support"""
         embed = discord.Embed(title="🎵 Now Playing", color=0x00FF00)
+        embed.add_field(name="Title", value=f"[{track.title}]({track.uri})", inline=False)
 
-        # Track info
-        embed.add_field(
-            name="Title",
-            value=f"[{track.title}]({track.uri})",
-            inline=False
-        )
-
-        # Duration
-        if track.duration:
-            duration_str = self._format_duration(track.duration)
-            embed.add_field(name="Duration", value=duration_str, inline=True)
+        duration_str = self._format_duration(track.duration)
+        embed.add_field(name="Duration", value=duration_str, inline=True)
 
         # Loop status
         loop_mode = getattr(player, 'loop_mode', False)
         embed.add_field(name="Loop", value="On" if loop_mode else "Off", inline=True)
 
-        # Thumbnail
+        if elapsed and track.duration:
+            elapsed_str = self._format_duration(elapsed)
+            remaining_str = self._format_duration(track.duration - elapsed)
+            embed.add_field(name="Elapsed", value=elapsed_str, inline=True)
+            embed.add_field(name="Remaining", value=remaining_str, inline=True)
+
         if track.thumbnail:
             embed.set_thumbnail(url=track.thumbnail)
 
         # Author info
-        if track.author:
-            embed.set_footer(text=f"Requested by {getattr(player, 'last_requester', 'Unknown')}")
+        embed.set_footer(text=f"Requested by {getattr(player, 'last_requester', 'Unknown')}")
 
         return embed
 
@@ -212,12 +208,13 @@ class MusicWavelinkCog(commands.Cog):
         return view
 
     async def _update_embed(self, player: wavelink.Player):
-        """Update the now playing embed"""
+        """Update the now playing embed with current position"""
         if not hasattr(player, 'current_message') or not player.current_track:
             return
 
         try:
-            embed = self._create_now_playing_embed(player.current_track, player)
+            elapsed = player.position
+            embed = self._create_now_playing_embed(player.current_track, player, elapsed)
             await player.current_message.edit(embed=embed)
         except Exception as e:
             logger.error(f"Failed to update embed: {e}")
@@ -325,7 +322,7 @@ class MusicWavelinkCog(commands.Cog):
             duration = self._format_duration(track.duration) if track.duration else "..."
             embed.add_field(
                 name=f"{i}. {track.title}",
-                value=f"Duration: {duration} | Requested by: {getattr(track, 'requester', 'Unknown')}",
+                value=duration,
                 inline=False
             )
 
@@ -340,12 +337,12 @@ class MusicWavelinkCog(commands.Cog):
 
     @commands.command(aliases=["nowplaying"])
     async def np(self, ctx: commands.Context):
-        """Show currently playing track"""
+        """Show currently playing track with current position"""
         player = ctx.voice_client
         if not player or not player.current_track:
             return await ctx.send("Nothing playing")
 
-        embed = self._create_now_playing_embed(player.current_track, player)
+        embed = self._create_now_playing_embed(player.current_track, player, player.position)
         view = self._create_controls(player)
         await ctx.send(embed=embed, view=view)
 
@@ -363,44 +360,6 @@ class MusicWavelinkCog(commands.Cog):
             search = f'ytmsearch:{search}'
         await self.play(ctx, search=search)
 
-    @commands.command()
-    async def pause(self, ctx: commands.Context):
-        """Pause the current track"""
-        player = ctx.voice_client
-        if not player:
-            return await ctx.send("Not connected to voice.")
-        
-        if player.paused:
-            await player.resume()
-            await ctx.send("Resumed playback.")
-        else:
-            await player.pause()
-            await ctx.send("Paused playback.")
-
-    @commands.command()
-    async def skip(self, ctx: commands.Context):
-        """Skip the current track"""
-        player = ctx.voice_client
-        if not player:
-            return await ctx.send("Not connected to voice.")
-        
-        if player.current_track:
-            track_title = player.current_track.title
-            await player.skip(force=True)
-            await ctx.send(f"Skipped: {track_title}")
-        else:
-            await ctx.send("Nothing to skip.")
-
-    @commands.command(name='stopmusic', aliases=['musicstop'])
-    async def stop_music(self, ctx: commands.Context):
-        """Stop playback and clear the queue"""
-        player = ctx.voice_client
-        if not player:
-            return await ctx.send("Not connected to voice.")
-        
-        player.queue.clear()
-        await player.stop()
-        await ctx.send("Stopped playback and cleared queue.")
 
     @commands.command()
     async def volume(self, ctx: commands.Context, level: int):
@@ -425,17 +384,6 @@ class MusicWavelinkCog(commands.Cog):
         await player.disconnect()
         await ctx.send("Disconnected from voice channel.")
 
-    @commands.command()
-    async def loop(self, ctx: commands.Context):
-        """Toggle loop mode for current track"""
-        player = ctx.voice_client
-        if not player:
-            return await ctx.send("Not connected to voice.")
-        
-        loop_mode = getattr(player, 'loop_mode', False)
-        player.loop_mode = not loop_mode
-        status = 'enabled' if player.loop_mode else 'disabled'
-        await ctx.send(f"Loop {status}.")
 
     @commands.command()
     async def clear(self, ctx: commands.Context):
