@@ -12,7 +12,7 @@ import os
 
 
 class AIImageCog(commands.Cog):
-    """CPU-optimized text-to-image generation cog using Tiny SD"""
+    """CPU-only text-to-image generation cog using Tiny SD model"""
 
     def __init__(self, bot):
         self.bot = bot
@@ -31,19 +31,23 @@ class AIImageCog(commands.Cog):
             memory = psutil.virtual_memory()
             available_gb = memory.available / (1024**3)
 
-            if available_gb < 1.0:
-                raise MemoryError("Insufficient RAM (< 1GB available)")
+            if available_gb < 0.5:
+                raise MemoryError("Insufficient RAM (< 512MB available)")
 
-            # Load Tiny SD model - very lightweight diffusion model optimized for CPU
+            # Load Tiny SD model - CPU-only inference
             self.model = StableDiffusionPipeline.from_pretrained(
                 "segmind/tiny-sd",
-                torch_dtype=torch.float32,  # Use float32 for CPU compatibility
-                device="cpu",
+                torch_dtype=torch.float32,  # Use float32 for CPU
+                device="cpu",  # Explicitly set to CPU
                 low_cpu_mem_usage=True  # Optimize for low memory
             )
 
-            # Enable memory efficient attention
-            self.model.enable_attention_slicing(slice_size="auto")
+            # Ensure all model components are on CPU
+            self.model = self.model.to("cpu")
+
+            # Enable maximum memory efficiency for CPU-only inference
+            self.model.enable_attention_slicing(slice_size="max")
+            self.model.enable_vae_slicing()
 
             self.model_loaded = True
             return True
@@ -63,14 +67,15 @@ class AIImageCog(commands.Cog):
                 # Set manual seed for reproducible results
                 torch.manual_seed(42)
 
-                # Generate image
+                # Generate image on CPU
                 image = self.model(
                     prompt=prompt,
                     width=width,
                     height=height,
                     num_inference_steps=10,  # Very few steps for speed
                     guidance_scale=7.5,
-                    output_type="pil"
+                    output_type="pil",
+                    generator=torch.Generator("cpu").manual_seed(42)  # CPU generator
                 ).images[0]
 
             # Convert to bytes
@@ -80,6 +85,8 @@ class AIImageCog(commands.Cog):
 
             # Force cleanup
             del image
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
             gc.collect()
 
             return img_buffer
@@ -129,7 +136,7 @@ class AIImageCog(commands.Cog):
 
                 # Check memory before generation
                 memory = psutil.virtual_memory()
-                if memory.available / (1024**3) < 0.8:  # Less than 800MB available
+                if memory.available / (1024**3) < 0.3:  # Less than 300MB available
                     await message.edit(content="❌ Insufficient memory available. Please try again later.")
                     return
 
