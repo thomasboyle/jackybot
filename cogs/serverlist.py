@@ -4,7 +4,7 @@ from discord import app_commands
 import asyncio
 
 
-class ServerManager(commands.Cog):
+class ServerListManager(commands.Cog):
     """A cog for managing server information and invite links."""
     
     def __init__(self, bot):
@@ -230,5 +230,5 @@ class ServerManager(commands.Cog):
 
 async def setup(bot):
     """Setup function to add the cog to the bot."""
-    await bot.add_cog(ServerManager(bot))
-    print("ServerManager cog loaded successfully!")
+    await bot.add_cog(ServerListManager(bot))
+    print("ServerListManager cog loaded successfully!")

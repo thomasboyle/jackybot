@@ -28,7 +28,16 @@ class LoveCog(commands.Cog):
 
     def _preload_assets(self):
         # Preload assets in a separate thread
-        self.font = ImageFont.truetype("arial.ttf", 36)
+        try:
+            # Try to load a common system font that works on both Windows and Linux
+            self.font = ImageFont.truetype("DejaVuSans.ttf", 36)
+        except OSError:
+            try:
+                # Fallback to Arial if available (Windows)
+                self.font = ImageFont.truetype("arial.ttf", 36)
+            except OSError:
+                # Final fallback to default font
+                self.font = ImageFont.load_default()
 
         # Load and optimize heart image
         heart_path = os.path.join("assets", "images", "heart.png")
