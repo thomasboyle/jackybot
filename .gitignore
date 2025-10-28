@@ -213,3 +213,10 @@ cache/
 *.pth
 *.pt
 *.bin
+
+# Lavalink configuration with secrets
+application.yml
+
+# Vim swap files
+*.swp
+*.swo

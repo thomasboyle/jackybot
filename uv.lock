@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.13'",
@@ -1021,6 +1021,7 @@ dependencies = [
     { name = "speechrecognition" },
     { name = "torch" },
     { name = "transformers" },
+    { name = "wavelink" },
     { name = "yt-dlp" },
 ]
 
@@ -1047,6 +1048,7 @@ requires-dist = [
     { name = "speechrecognition", specifier = ">=3.10" },
     { name = "torch", specifier = ">=2.0" },
     { name = "transformers", specifier = ">=4.45" },
+    { name = "wavelink", specifier = ">=2.0.0" },
     { name = "yt-dlp", specifier = ">=2024.3" },
 ]
 
@@ -2763,6 +2765,22 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/15/22/9ee70a2574a4f4599c47dd506532914ce044817c7752a79b6a51286319bc/urllib3-2.5.0.tar.gz", hash = "sha256:3fc47733c7e419d4bc3f6b3dc2b4f890bb743906a30d56ba4a5bfa4bbff92760", size = 393185, upload-time = "2025-06-18T14:07:41.644Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a7/c2/fe1e52489ae3122415c51f387e221dd0773709bad6c6cdaa599e8a2c5185/urllib3-2.5.0-py3-none-any.whl", hash = "sha256:e6b01673c0fa6a13e374b50871808eb3bf7046c4b125b216f6bf1cc604cff0dc", size = 129795, upload-time = "2025-06-18T14:07:40.39Z" },
+]
+
+[[package]]
+name = "wavelink"
+version = "3.4.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "async-timeout" },
+    { name = "discord-py" },
+    { name = "typing-extensions" },
+    { name = "yarl" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f7/4d/fc59d7be75d35892e124d19a1cd3dc2fa7346e37224e9f5680f7fbec3fe4/wavelink-3.4.1.tar.gz", hash = "sha256:0aa2db5e4e7d6b0702a69e4cdb7161b447b7a5735955bce5bbadb28235c5478e", size = 48734, upload-time = "2024-07-13T01:59:45.378Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fb/e4/4b02900a3b16a679b44481d4a226dba097a4fc51bcc899098a79d642e050/wavelink-3.4.1-py3-none-any.whl", hash = "sha256:90f7e29b262b726417ce8f02d2725935a018e4938825289683a9548609206a2b", size = 64811, upload-time = "2024-07-13T01:59:42.809Z" },
 ]
 
 [[package]]

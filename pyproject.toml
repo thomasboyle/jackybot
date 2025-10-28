@@ -26,6 +26,7 @@ dependencies = [
   "SpeechRecognition>=3.10",
   "discord-ext-voice-recv>=0.5.0",
   "scipy>=1.10",
+  "wavelink>=2.0.0",
 ]
 
 [build-system]

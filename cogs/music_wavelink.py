@@ -24,7 +24,22 @@ logger = logging.getLogger('WavelinkMusicBot')
 
 
 class MusicWavelinkCog(commands.Cog):
-    """Wavelink-based music cog optimized for VPS deployment"""
+    """Wavelink-based music cog with YouTube support via lavalink-devs/youtube-source
+    
+    Features:
+    - YouTube search and playback using ytsearch: prefix
+    - YouTube Music support using ytmsearch: prefix
+    - Direct YouTube URL playback
+    - Playlist support
+    - Queue management with shuffle, clear, remove
+    - Playback controls: pause, skip, stopmusic, loop
+    - Volume control
+    - Lyrics fetching
+    
+    Requires:
+    - Lavalink server with youtube-plugin.jar
+    - Configured application.yml with YouTube clients
+    """
 
     def __init__(self, bot):
         self.bot = bot
@@ -93,6 +108,12 @@ class MusicWavelinkCog(commands.Cog):
             except:
                 pass
             delattr(player, 'current_message')
+
+        # Check if loop mode is enabled
+        loop_mode = getattr(player, 'loop_mode', False)
+        if loop_mode and payload.track and payload.reason == 'finished':
+            await player.play(payload.track)
+            return
 
         # Auto-play next track if not stopped manually
         if not player.queue.is_empty and payload.reason != 'stopped':
@@ -231,6 +252,16 @@ class MusicWavelinkCog(commands.Cog):
         if hasattr(player, 'channel'):
             await player.channel.send(f"Seeked to {time_display}")
 
+    def _get_search_query(self, search: str) -> str:
+        """Process search query with YouTube-specific prefixes"""
+        if search.startswith(('http://', 'https://')):
+            return search
+        
+        if not any(search.startswith(prefix) for prefix in ['ytsearch:', 'ytmsearch:', 'scsearch:', 'spsearch:']):
+            return f'ytsearch:{search}'
+        
+        return search
+
     @commands.command()
     async def play(self, ctx: commands.Context, *, search: str):
         """Play music from YouTube or other sources"""
@@ -250,8 +281,11 @@ class MusicWavelinkCog(commands.Cog):
         if player.channel != ctx.author.voice.channel:
             await player.move_to(ctx.author.voice.channel)
 
+        # Process search query with YouTube prefix
+        search_query = self._get_search_query(search)
+        
         # Search for tracks
-        tracks = await wavelink.Playable.search(search)
+        tracks = await wavelink.Playable.search(search_query)
         if not tracks:
             return await ctx.send("No results found.")
 
@@ -314,6 +348,134 @@ class MusicWavelinkCog(commands.Cog):
         embed = self._create_now_playing_embed(player.current_track, player)
         view = self._create_controls(player)
         await ctx.send(embed=embed, view=view)
+
+    @commands.command()
+    async def ytplay(self, ctx: commands.Context, *, search: str):
+        """Play music specifically from YouTube"""
+        if not search.startswith(('http://', 'https://')):
+            search = f'ytsearch:{search}'
+        await self.play(ctx, search=search)
+
+    @commands.command()
+    async def ytmusic(self, ctx: commands.Context, *, search: str):
+        """Play music from YouTube Music"""
+        if not search.startswith(('http://', 'https://')):
+            search = f'ytmsearch:{search}'
+        await self.play(ctx, search=search)
+
+    @commands.command()
+    async def pause(self, ctx: commands.Context):
+        """Pause the current track"""
+        player = ctx.voice_client
+        if not player:
+            return await ctx.send("Not connected to voice.")
+        
+        if player.paused:
+            await player.resume()
+            await ctx.send("Resumed playback.")
+        else:
+            await player.pause()
+            await ctx.send("Paused playback.")
+
+    @commands.command()
+    async def skip(self, ctx: commands.Context):
+        """Skip the current track"""
+        player = ctx.voice_client
+        if not player:
+            return await ctx.send("Not connected to voice.")
+        
+        if player.current_track:
+            track_title = player.current_track.title
+            await player.skip(force=True)
+            await ctx.send(f"Skipped: {track_title}")
+        else:
+            await ctx.send("Nothing to skip.")
+
+    @commands.command(name='stopmusic', aliases=['musicstop'])
+    async def stop_music(self, ctx: commands.Context):
+        """Stop playback and clear the queue"""
+        player = ctx.voice_client
+        if not player:
+            return await ctx.send("Not connected to voice.")
+        
+        player.queue.clear()
+        await player.stop()
+        await ctx.send("Stopped playback and cleared queue.")
+
+    @commands.command()
+    async def volume(self, ctx: commands.Context, level: int):
+        """Set playback volume (0-100)"""
+        player = ctx.voice_client
+        if not player:
+            return await ctx.send("Not connected to voice.")
+        
+        if not 0 <= level <= 100:
+            return await ctx.send("Volume must be between 0 and 100.")
+        
+        await player.set_volume(level)
+        await ctx.send(f"Volume set to {level}%.")
+
+    @commands.command()
+    async def disconnect(self, ctx: commands.Context):
+        """Disconnect the bot from voice"""
+        player = ctx.voice_client
+        if not player:
+            return await ctx.send("Not connected to voice.")
+        
+        await player.disconnect()
+        await ctx.send("Disconnected from voice channel.")
+
+    @commands.command()
+    async def loop(self, ctx: commands.Context):
+        """Toggle loop mode for current track"""
+        player = ctx.voice_client
+        if not player:
+            return await ctx.send("Not connected to voice.")
+        
+        loop_mode = getattr(player, 'loop_mode', False)
+        player.loop_mode = not loop_mode
+        status = 'enabled' if player.loop_mode else 'disabled'
+        await ctx.send(f"Loop {status}.")
+
+    @commands.command()
+    async def clear(self, ctx: commands.Context):
+        """Clear the queue"""
+        player = ctx.voice_client
+        if not player:
+            return await ctx.send("Not connected to voice.")
+        
+        player.queue.clear()
+        await ctx.send("Queue cleared.")
+
+    @commands.command()
+    async def shuffle(self, ctx: commands.Context):
+        """Shuffle the queue"""
+        player = ctx.voice_client
+        if not player or player.queue.is_empty:
+            return await ctx.send("Queue is empty.")
+        
+        player.queue.shuffle()
+        await ctx.send("Queue shuffled.")
+
+    @commands.command()
+    async def remove(self, ctx: commands.Context, index: int):
+        """Remove a track from the queue by position"""
+        player = ctx.voice_client
+        if not player or player.queue.is_empty:
+            return await ctx.send("Queue is empty.")
+        
+        if index < 1 or index > player.queue.count:
+            return await ctx.send(f"Invalid position. Queue has {player.queue.count} tracks.")
+        
+        queue_list = list(player.queue)
+        removed_track = queue_list[index - 1]
+        
+        player.queue.clear()
+        for i, track in enumerate(queue_list):
+            if i != index - 1:
+                player.queue.put(track)
+        
+        await ctx.send(f"Removed: {removed_track.title}")
 
     def _parse_artist_title(self, title: str) -> tuple[str, str]:
         """Parse artist and title from track title"""

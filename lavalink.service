@@ -1,0 +1,15 @@
+[Unit]
+Description=Lavalink
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/jackybot
+EnvironmentFile=/root/jackybot/.env
+ExecStart=/usr/bin/java -jar Lavalink.jar
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
