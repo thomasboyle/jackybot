@@ -76,10 +76,6 @@ class MusicWavelinkCog(commands.Cog):
         """Cleanup resources on cog unload"""
         await self.session.close()
 
-    @commands.Cog.listener()
-    async def on_command(self, ctx):
-        """Log when any command is invoked"""
-        logger.info(f"Command invoked: {ctx.command.name} by {ctx.author.name}")
 
     @commands.Cog.listener()
     async def on_wavelink_node_ready(self, payload: wavelink.NodeReadyEventPayload):
@@ -93,24 +89,15 @@ class MusicWavelinkCog(commands.Cog):
             player = payload.player
             track = payload.track
 
-            logger.info(f"Track started: {track.title}")
-
             # Store track start time for elapsed tracking
             player.track_start_time = time.time()
 
             # Get the channel to send message to
             channel = getattr(player, 'text_channel', None)
             if not channel:
-                logger.warning("No text_channel set on player, cannot send now playing embed")
                 return
 
-            # Create embed for now playing
-            embed = self._create_now_playing_embed(track, player)
-            view = self._create_controls(player)
-
-            message = await channel.send(embed=embed, view=view)
-            player.current_message = message
-            logger.info(f"Now playing embed sent for: {track.title}")
+            await self._send_now_playing(channel, player)
         except Exception as e:
             logger.error(f"Error in on_wavelink_track_start: {e}", exc_info=True)
 
@@ -119,7 +106,6 @@ class MusicWavelinkCog(commands.Cog):
         """Handle track end event"""
         try:
             player = payload.player
-            logger.info(f"Track ended: {payload.track.title if payload.track else 'Unknown'} (reason: {payload.reason})")
 
             # Clear current message
             if hasattr(player, 'current_message'):
@@ -132,18 +118,15 @@ class MusicWavelinkCog(commands.Cog):
             # Check if loop mode is enabled
             loop_mode = getattr(player, 'loop_mode', False)
             if loop_mode and payload.track and payload.reason == 'finished':
-                logger.info("Loop mode enabled, replaying track")
                 await player.play(payload.track)
                 return
 
             # Auto-play next track if not stopped manually
             if not player.queue.is_empty and payload.reason != 'stopped':
                 next_track = player.queue.get()
-                logger.info(f"Playing next track from queue: {next_track.title}")
                 await player.play(next_track)
             elif player.queue.is_empty and payload.reason == 'finished':
                 # Auto-disconnect when queue is empty
-                logger.info("Queue empty, disconnecting")
                 await player.disconnect()
         except Exception as e:
             logger.error(f"Error in on_wavelink_track_end: {e}", exc_info=True)
@@ -160,17 +143,10 @@ class MusicWavelinkCog(commands.Cog):
         )
 
         # Duration - handle different possible attribute names
-        duration_ms = None
-        if hasattr(track, 'duration') and track.duration:
-            duration_ms = track.duration
-        elif hasattr(track, 'length') and track.length:
-            duration_ms = track.length
-        elif hasattr(track, 'duration_ms'):
-            duration_ms = track.duration_ms
+        duration_ms = getattr(track, 'duration', None) or getattr(track, 'length', None) or getattr(track, 'duration_ms', None)
 
         if duration_ms:
-            duration_str = self._format_duration(duration_ms)
-            embed.add_field(name="Duration", value=duration_str, inline=True)
+            embed.add_field(name="Duration", value=self._format_duration(duration_ms), inline=True)
 
         # Loop status
         loop_mode = getattr(player, 'loop_mode', False)
@@ -187,10 +163,9 @@ class MusicWavelinkCog(commands.Cog):
                 embed.add_field(name="Remaining", value=remaining_str, inline=True)
 
         # Thumbnail
-        if hasattr(track, 'thumbnail') and track.thumbnail:
-            embed.set_thumbnail(url=track.thumbnail)
-        elif hasattr(track, 'artwork_url') and track.artwork_url:
-            embed.set_thumbnail(url=track.artwork_url)
+        thumbnail = getattr(track, 'thumbnail', None) or getattr(track, 'artwork_url', None)
+        if thumbnail:
+            embed.set_thumbnail(url=thumbnail)
 
         # Requester info
         requester = getattr(player, 'last_requester', getattr(track, 'requester', None))
@@ -278,6 +253,13 @@ class MusicWavelinkCog(commands.Cog):
         except Exception as e:
             logger.error(f"Failed to update embed: {e}")
 
+    async def _send_now_playing(self, ctx_or_channel, player: wavelink.Player):
+        """Send now playing embed with controls to context or channel"""
+        embed = self._create_now_playing_embed(player.current, player, show_progress=True)
+        view = self._create_controls(player)
+        message = await ctx_or_channel.send(embed=embed, view=view)
+        player.current_message = message
+
     def _get_elapsed_time(self, player: wavelink.Player) -> int:
         """Get elapsed time in milliseconds for current track"""
         if not player.current:
@@ -313,77 +295,85 @@ class MusicWavelinkCog(commands.Cog):
     async def seek_player(self, player: wavelink.Player, seconds: int):
         """Seek the player by relative seconds"""
         if not player.current:
-            logger.warning("Seek: No current track")
             return
 
         # Get current position safely
-        current_pos = getattr(player, 'position', 0)
-        if current_pos is None:
-            current_pos = 0
+        current_pos = getattr(player, 'position', 0) or 0
 
         # Get track duration safely
-        track_duration = None
-        if hasattr(player.current, 'duration') and player.current.duration:
-            track_duration = player.current.duration
-        elif hasattr(player.current, 'length') and player.current.length:
-            track_duration = player.current.length
-        elif hasattr(player.current, 'duration_ms'):
-            track_duration = player.current.duration_ms
-
-        logger.info(f"Seeking: current_pos={current_pos}, track_duration={track_duration}, seconds={seconds}, player.playing={player.playing}")
+        track_duration = getattr(player.current, 'duration', None) or \
+                        getattr(player.current, 'length', None) or \
+                        getattr(player.current, 'duration_ms', None)
 
         if track_duration:
             new_pos = max(0, min(current_pos + (seconds * 1000), track_duration))
         else:
-            new_pos = max(0, current_pos + (seconds * 1000))  # No limit if duration unknown
+            new_pos = max(0, current_pos + (seconds * 1000))
 
-        logger.info(f"Seeking to position: {new_pos}ms")
         await player.seek(new_pos)
-
-        time_display = self._format_duration(new_pos)
-
-        # Don't send channel message here - let the caller handle feedback
-        logger.info(f"Seek completed to {time_display}")
 
     def _get_search_query(self, search: str) -> str:
         """Process search query with YouTube-specific prefixes"""
         if search.startswith(('http://', 'https://')):
             return search
-        
+
         if not any(search.startswith(prefix) for prefix in ['ytsearch:', 'ytmsearch:', 'scsearch:', 'spsearch:']):
             return f'ytsearch:{search}'
-        
+
         return search
 
-    @commands.command()
-    async def play(self, ctx: commands.Context, *, search: str):
-        """Play music from YouTube or other sources"""
-        logger.info(f"Play command received from {ctx.author.name}: {search}")
-        
+    async def _ensure_player(self, ctx: commands.Context) -> wavelink.Player:
+        """Get or create player and ensure proper setup"""
         if not ctx.author.voice:
-            return await ctx.send("Join a voice channel first.")
+            raise commands.CommandError("Join a voice channel first.")
 
-        # Get or create player
         player = ctx.voice_client
         if not player:
             try:
                 player = await ctx.author.voice.channel.connect(cls=wavelink.Player)
-                logger.info(f"Connected to voice channel: {ctx.author.voice.channel.name}")
-            except Exception as e:
-                logger.error(f"Failed to connect to voice: {e}")
-                return await ctx.send("Failed to connect to voice channel.")
+            except Exception:
+                raise commands.CommandError("Failed to connect to voice channel.")
 
         # Store text channel for messages
         player.text_channel = ctx.channel
-        logger.info(f"Set text_channel to: {ctx.channel.name}")
 
         # Move to user's channel if different
         if player.channel != ctx.author.voice.channel:
             await player.move_to(ctx.author.voice.channel)
 
+        return player
+
+    def _get_player(self, ctx: commands.Context) -> wavelink.Player:
+        """Get existing player or raise error"""
+        player = ctx.voice_client
+        if not player:
+            raise commands.CommandError("Not connected to voice.")
+        return player
+
+    def _remove_from_queue(self, player: wavelink.Player, index: int) -> wavelink.Playable:
+        """Remove track from queue by index (1-based) and return removed track"""
+        queue_list = list(player.queue)
+        if index < 1 or index > len(queue_list):
+            raise ValueError("Invalid index")
+
+        removed_track = queue_list.pop(index - 1)
+        player.queue.clear()
+        for track in queue_list:
+            player.queue.put(track)
+
+        return removed_track
+
+    @commands.command()
+    async def play(self, ctx: commands.Context, *, search: str):
+        """Play music from YouTube or other sources"""
+        try:
+            player = await self._ensure_player(ctx)
+        except commands.CommandError as e:
+            return await ctx.send(str(e))
+
         # Process search query with YouTube prefix
         search_query = self._get_search_query(search)
-        
+
         # Search for tracks
         tracks = await wavelink.Playable.search(search_query)
         if not tracks:
@@ -407,15 +397,18 @@ class MusicWavelinkCog(commands.Cog):
                 position = player.queue.count + 1
                 await ctx.reply(f"Queued #{position}: {track.title}")
             else:
-                logger.info(f"Playing track: {track.title}")
                 await player.play(track)
                 player.last_requester = ctx.author
 
     @commands.command()
     async def queue(self, ctx: commands.Context):
         """Display current queue"""
-        player = ctx.voice_client
-        if not player or player.queue.is_empty:
+        try:
+            player = self._get_player(ctx)
+        except commands.CommandError as e:
+            return await ctx.reply(str(e))
+
+        if player.queue.is_empty:
             return await ctx.reply("Queue is empty")
 
         embed = discord.Embed(title="🎶 Queue", color=0x0000FF)
@@ -443,38 +436,15 @@ class MusicWavelinkCog(commands.Cog):
     async def np(self, ctx: commands.Context):
         """Show currently playing track with progress"""
         try:
-            logger.info(f"NP command called by {ctx.author.name}")
-            player = ctx.voice_client
-            
-            if not player:
-                logger.warning("NP: No player found")
-                return await ctx.send("Nothing playing")
-            
+            player = self._get_player(ctx)
+
             if not player.current:
-                logger.warning("NP: No current track")
                 return await ctx.send("Nothing playing")
 
-            logger.info(f"NP: Current track is {player.current.title}")
-            
-            # Show embed with progress tracking
-            try:
-                embed = self._create_now_playing_embed(player.current, player, show_progress=True)
-                logger.info("NP: Embed created successfully")
-            except Exception as embed_error:
-                logger.error(f"NP: Failed to create embed: {embed_error}", exc_info=True)
-                raise
-            
-            try:
-                view = self._create_controls(player)
-                logger.info("NP: Controls created successfully")
-            except Exception as view_error:
-                logger.error(f"NP: Failed to create controls: {view_error}", exc_info=True)
-                raise
-            
-            await ctx.send(embed=embed, view=view)
-            logger.info("NP: Embed sent successfully")
+            await self._send_now_playing(ctx, player)
+        except commands.CommandError as e:
+            return await ctx.send(str(e))
         except Exception as e:
-            logger.error(f"NP command error: {e}", exc_info=True)
             await ctx.send(f"Now playing failed: {e}")
 
     @commands.command()
@@ -482,11 +452,7 @@ class MusicWavelinkCog(commands.Cog):
         """Play music specifically from YouTube"""
         if not search.startswith(('http://', 'https://')):
             search = f'ytsearch:{search}'
-        
-        # Ensure player has text channel stored
-        if ctx.voice_client:
-            ctx.voice_client.text_channel = ctx.channel
-        
+
         await self.play(ctx, search=search)
 
     @commands.command()
@@ -494,64 +460,50 @@ class MusicWavelinkCog(commands.Cog):
         """Play music from YouTube Music"""
         if not search.startswith(('http://', 'https://')):
             search = f'ytmsearch:{search}'
-        
-        # Ensure player has text channel stored
-        if ctx.voice_client:
-            ctx.voice_client.text_channel = ctx.channel
-        
+
         await self.play(ctx, search=search)
 
     @commands.command()
     async def pause(self, ctx: commands.Context):
         """Pause or resume the current track"""
-        player = ctx.voice_client
-        if not player:
-            return await ctx.send("Not connected to voice.")
-        
-        # Ensure text channel is set
-        player.text_channel = ctx.channel
-        
+        try:
+            player = self._get_player(ctx)
+            player.text_channel = ctx.channel
+        except commands.CommandError as e:
+            return await ctx.send(str(e))
+
         if player.paused:
             await player.resume()
             await ctx.send("Resumed playback.")
-            await self._update_embed(player)
         else:
             await player.pause()
             await ctx.send("Paused playback.")
-            await self._update_embed(player)
+
+        await self._update_embed(player)
 
     @commands.command()
     async def skip(self, ctx: commands.Context):
         """Skip the current track"""
         try:
-            logger.info(f"Skip command called by {ctx.author.name}")
-            player = ctx.voice_client
-            if not player:
-                logger.warning("Skip: No player found")
-                return await ctx.send("Not connected to voice.")
-            
-            # Ensure text channel is set for next track
+            player = self._get_player(ctx)
             player.text_channel = ctx.channel
-            
-            if player.current:
-                track_title = player.current.title
-                logger.info(f"Skipping track: {track_title}")
-                await player.skip(force=True)
-                await ctx.send(f"{ctx.author.name} skipped")
-            else:
-                logger.warning("Skip: No current track")
-                await ctx.send("Nothing to skip.")
-        except Exception as e:
-            logger.error(f"Skip command error: {e}", exc_info=True)
-            await ctx.send(f"Skip failed: {e}")
+        except commands.CommandError as e:
+            return await ctx.send(str(e))
+
+        if not player.current:
+            return await ctx.send("Nothing to skip.")
+
+        await player.skip(force=True)
+        await ctx.send(f"{ctx.author.name} skipped")
 
     @commands.command(name='stopmusic', aliases=['musicstop'])
     async def stop_music(self, ctx: commands.Context):
         """Stop playback and clear the queue"""
-        player = ctx.voice_client
-        if not player:
-            return await ctx.send("Not connected to voice.")
-        
+        try:
+            player = self._get_player(ctx)
+        except commands.CommandError as e:
+            return await ctx.send(str(e))
+
         player.queue.clear()
         await player.stop()
         await ctx.send("Stopped playback and cleared queue.")
@@ -559,33 +511,36 @@ class MusicWavelinkCog(commands.Cog):
     @commands.command()
     async def volume(self, ctx: commands.Context, level: int):
         """Set playback volume (0-100)"""
-        player = ctx.voice_client
-        if not player:
-            return await ctx.send("Not connected to voice.")
-        
+        try:
+            player = self._get_player(ctx)
+        except commands.CommandError as e:
+            return await ctx.send(str(e))
+
         if not 0 <= level <= 100:
             return await ctx.send("Volume must be between 0 and 100.")
-        
+
         await player.set_volume(level)
         await ctx.send(f"Volume set to {level}%.")
 
     @commands.command()
     async def disconnect(self, ctx: commands.Context):
         """Disconnect the bot from voice"""
-        player = ctx.voice_client
-        if not player:
-            return await ctx.send("Not connected to voice.")
-        
+        try:
+            player = self._get_player(ctx)
+        except commands.CommandError as e:
+            return await ctx.send(str(e))
+
         await player.disconnect()
         await ctx.send("Disconnected from voice channel.")
 
     @commands.command()
     async def loop(self, ctx: commands.Context):
         """Toggle loop mode for current track"""
-        player = ctx.voice_client
-        if not player:
-            return await ctx.send("Not connected to voice.")
-        
+        try:
+            player = self._get_player(ctx)
+        except commands.CommandError as e:
+            return await ctx.send(str(e))
+
         loop_mode = getattr(player, 'loop_mode', False)
         player.loop_mode = not loop_mode
         status = 'enabled' if player.loop_mode else 'disabled'
@@ -594,118 +549,59 @@ class MusicWavelinkCog(commands.Cog):
     @commands.command()
     async def clear(self, ctx: commands.Context):
         """Clear the queue"""
-        player = ctx.voice_client
-        if not player:
-            return await ctx.send("Not connected to voice.")
-        
+        try:
+            player = self._get_player(ctx)
+        except commands.CommandError as e:
+            return await ctx.send(str(e))
+
         player.queue.clear()
         await ctx.send("Queue cleared.")
 
     @commands.command()
     async def shuffle(self, ctx: commands.Context):
         """Shuffle the queue"""
-        player = ctx.voice_client
-        if not player or player.queue.is_empty:
+        try:
+            player = self._get_player(ctx)
+        except commands.CommandError as e:
+            return await ctx.send(str(e))
+
+        if player.queue.is_empty:
             return await ctx.send("Queue is empty.")
-        
+
         player.queue.shuffle()
         await ctx.send("Queue shuffled.")
 
     @commands.command()
     async def remove(self, ctx: commands.Context, index: int):
         """Remove a track from the queue by position"""
-        player = ctx.voice_client
-        if not player or player.queue.is_empty:
+        try:
+            player = self._get_player(ctx)
+        except commands.CommandError as e:
+            return await ctx.send(str(e))
+
+        if player.queue.is_empty:
             return await ctx.send("Queue is empty.")
-        
-        if index < 1 or index > player.queue.count:
-            return await ctx.send(f"Invalid position. Queue has {player.queue.count} tracks.")
-        
-        queue_list = list(player.queue)
-        removed_track = queue_list[index - 1]
-        
-        player.queue.clear()
-        for i, track in enumerate(queue_list):
-            if i != index - 1:
-                player.queue.put(track)
-        
-        await ctx.send(f"Removed: {removed_track.title}")
+
+        try:
+            removed_track = self._remove_from_queue(player, index)
+            await ctx.send(f"Removed: {removed_track.title}")
+        except ValueError:
+            await ctx.send(f"Invalid position. Queue has {player.queue.count} tracks.")
 
     @commands.command()
     async def seek(self, ctx: commands.Context, seconds: int):
         """Seek forward or backward by specified seconds"""
-        player = ctx.voice_client
-        if not player or not player.current:
+        try:
+            player = self._get_player(ctx)
+        except commands.CommandError as e:
+            return await ctx.send(str(e))
+
+        if not player.current:
             return await ctx.send("Nothing is playing to seek.")
 
         await self.seek_player(player, seconds)
         await ctx.send(f"Seeked {seconds:+d} seconds")
 
-    @commands.command(name='musictest')
-    async def music_test(self, ctx: commands.Context):
-        """Test if music commands are responsive"""
-        logger.info(f"Music test command received from {ctx.author.name}")
-        player = ctx.voice_client
-        status = "playing" if player and player.playing else "not playing"
-        await ctx.send(f"Music bot is responsive! Status: {status}")
-
-    @commands.command(name='playerinfo')
-    async def player_info(self, ctx: commands.Context):
-        """Show detailed player information for debugging"""
-        try:
-            player = ctx.voice_client
-            if not player:
-                return await ctx.send("No player connected")
-
-            # Get track duration safely
-            duration_info = "None"
-            if player.current:
-                if hasattr(player.current, 'duration') and player.current.duration:
-                    duration_info = f"{player.current.duration}ms ({self._format_duration(player.current.duration)})"
-                elif hasattr(player.current, 'length') and player.current.length:
-                    duration_info = f"{player.current.length}ms ({self._format_duration(player.current.length)})"
-                elif hasattr(player.current, 'duration_ms'):
-                    duration_info = f"{player.current.duration_ms}ms ({self._format_duration(player.current.duration_ms)})"
-                else:
-                    duration_info = "Unknown"
-
-            info_lines = [
-                f"Connected: {player.connected}",
-                f"Playing: {player.playing}",
-                f"Paused: {player.paused}",
-                f"Current track: {player.current.title if player.current else 'None'}",
-                f"Track duration: {duration_info}",
-                f"Queue size: {player.queue.count}",
-                f"Text channel set: {hasattr(player, 'text_channel')}",
-                f"Text channel: {player.text_channel.name if hasattr(player, 'text_channel') else 'Not set'}",
-                f"Has current_message: {hasattr(player, 'current_message')}"
-            ]
-
-            await ctx.send("```\n" + "\n".join(info_lines) + "\n```")
-        except Exception as e:
-            await ctx.send(f"Error: {e}")
-
-    @commands.command(name='testembed')
-    async def test_embed(self, ctx: commands.Context):
-        """Test sending an embed with controls"""
-        try:
-            player = ctx.voice_client
-            if not player or not player.current:
-                return await ctx.send("No track playing to test with")
-            
-            logger.info("Creating test embed...")
-            embed = discord.Embed(title="🎵 Test Embed", color=0x00FF00)
-            embed.add_field(name="Track", value=player.current.title, inline=False)
-            
-            logger.info("Creating test controls...")
-            view = self._create_controls(player)
-            
-            logger.info("Sending test embed...")
-            await ctx.send(embed=embed, view=view)
-            logger.info("Test embed sent successfully!")
-        except Exception as e:
-            logger.error(f"Test embed failed: {e}", exc_info=True)
-            await ctx.send(f"Test failed: {e}")
 
     def _parse_artist_title(self, title: str) -> tuple[str, str]:
         """Parse artist and title from track title"""
@@ -750,11 +646,9 @@ class MusicWavelinkCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         track_title = player.current.title
-        logger.info(f"Fetching lyrics for: '{track_title}'")
 
         # Parse artist and title
         artist, title = self._parse_artist_title(track_title)
-        logger.info(f"Parsed artist: '{artist}', title: '{title}'")
 
         async def try_lyrics_request(try_artist: str, try_title: str, attempt_name: str) -> bool:
             """Try to fetch lyrics with given artist/title combination"""
@@ -763,11 +657,8 @@ class MusicWavelinkCog(commands.Cog):
                 encoded_artist = quote(try_artist)
                 encoded_title = quote(try_title)
                 url = f"https://api.lyrics.ovh/v1/{encoded_artist}/{encoded_title}"
-                logger.info(f"{attempt_name} - Making API request to: {url}")
 
                 async with self.session.get(url) as response:
-                    logger.info(f"{attempt_name} - Lyrics API response status: {response.status}")
-
                     if response.status == 200:
                         try:
                             data = await response.json()
@@ -776,7 +667,6 @@ class MusicWavelinkCog(commands.Cog):
                             if lyrics:
                                 # Clean up lyrics (remove extra newlines)
                                 lyrics = LYRICS_NEWLINES_REGEX.sub('\n\n', lyrics)
-                                logger.info(f"Successfully retrieved lyrics for '{try_artist} - {try_title}' ({len(lyrics)} characters)")
 
                                 lyrics_content = f"{try_artist} - {try_title}\n\n{lyrics}"
                                 lyrics_file = io.BytesIO(lyrics_content.encode('utf-8'))
@@ -791,9 +681,9 @@ class MusicWavelinkCog(commands.Cog):
                                 await interaction.followup.send(embed=embed, file=file, ephemeral=True)
                                 return True
                         except Exception as json_error:
-                            logger.error(f"{attempt_name} - Failed to parse JSON response: {json_error}")
+                            logger.error(f"Failed to parse lyrics response: {json_error}")
                     elif response.status == 404:
-                        logger.info(f"{attempt_name} - Lyrics not found (404) for '{try_artist} - {try_title}'")
+                        pass
 
                 return False
 
@@ -812,27 +702,18 @@ class MusicWavelinkCog(commands.Cog):
                 # try with just the first artist
                 if ',' in artist:
                     first_artist = artist.split(',')[0].strip()
-                    logger.info(f"Trying with first artist only: {first_artist}")
-                    success = await try_lyrics_request(first_artist, title, f"First artist '{first_artist}'")
-                    if success:
+                    if await try_lyrics_request(first_artist, title, f"First artist '{first_artist}'"):
                         return
 
             # Second attempt: try with title as artist (common for well-known songs)
-            logger.info("Trying with song title as artist")
-            success = await try_lyrics_request(title, title, "Title as artist")
-            if success:
+            if await try_lyrics_request(title, title, "Title as artist"):
                 return
 
             # Third attempt: try with common generic artists
             common_artists = ["Various Artists", "Unknown Artist", "Various", "Classic", "Popular"]
             for try_artist in common_artists:
-                logger.info(f"Trying with generic artist: {try_artist}")
-                success = await try_lyrics_request(try_artist, title, f"Generic artist '{try_artist}'")
-                if success:
+                if await try_lyrics_request(try_artist, title, f"Generic artist '{try_artist}'"):
                     return
-
-            # If all attempts failed, send error message
-            logger.warning(f"All lyrics attempts failed for '{track_title}'")
             await interaction.followup.send(
                 f"No lyrics found for this song. The lyrics database may not have this track, or it might be too new. Try searching for the official lyrics online.",
                 ephemeral=True
@@ -841,7 +722,6 @@ class MusicWavelinkCog(commands.Cog):
         except Exception as e:
             logger.error(f"Lyrics fetch failed for '{artist} - {title}': {e}")
             await interaction.followup.send("Failed to fetch lyrics. Please try again later.", ephemeral=True)
-
 
 async def setup(bot):
     await bot.add_cog(MusicWavelinkCog(bot))
