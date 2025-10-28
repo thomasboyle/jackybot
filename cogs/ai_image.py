@@ -87,13 +87,13 @@ class AIImageCog(commands.Cog):
         except Exception as e:
             raise e
 
-    @commands.command(name='create')
+    @commands.command(name='imagine')
     async def create_image(self, ctx, *, args: str = ""):
-        """Generate an image from text prompt. Usage: !create [prompt] 512x512"""
+        """Generate an image from text prompt. Usage: !imagine [prompt] 512x512"""
 
         # Parse arguments
         if not args.strip():
-            await ctx.reply("Please provide a prompt. Usage: `!create [prompt] 512x512`")
+            await ctx.reply("Please provide a prompt. Usage: `!imagine [prompt] 512x512`")
             return
 
         # Split prompt and resolution
