@@ -87,14 +87,18 @@ class MusicWavelinkCog(commands.Cog):
         player = payload.player
         track = payload.track
 
+        # Store track start time for elapsed tracking
+        player.track_start_time = time.time()
+
         # Create embed for now playing
-        embed = self._create_now_playing_embed(track, player, player.position)
+        embed = self._create_now_playing_embed(track, player)
         view = self._create_controls(player)
 
-        message = await player.channel.send(embed=embed, view=view)
-
-        # Store message for updates
-        player.current_message = message
+        # Get the channel to send message to
+        channel = getattr(player, 'text_channel', None)
+        if channel:
+            message = await channel.send(embed=embed, view=view)
+            player.current_message = message
 
     @commands.Cog.listener()
     async def on_wavelink_track_end(self, payload: wavelink.TrackEndEventPayload):
@@ -119,30 +123,49 @@ class MusicWavelinkCog(commands.Cog):
         if not player.queue.is_empty and payload.reason != 'stopped':
             next_track = player.queue.get()
             await player.play(next_track)
+        elif player.queue.is_empty and payload.reason == 'finished':
+            # Auto-disconnect when queue is empty
+            await player.disconnect()
 
-    def _create_now_playing_embed(self, track: wavelink.Playable, player: wavelink.Player, elapsed=0) -> discord.Embed:
-        """Create now playing embed with elapsed time support"""
+    def _create_now_playing_embed(self, track: wavelink.Playable, player: wavelink.Player, show_progress: bool = False) -> discord.Embed:
+        """Create now playing embed with optional progress tracking"""
         embed = discord.Embed(title="🎵 Now Playing", color=0x00FF00)
-        embed.add_field(name="Title", value=f"[{track.title}]({track.uri})", inline=False)
 
-        duration_str = self._format_duration(track.duration)
-        embed.add_field(name="Duration", value=duration_str, inline=True)
+        # Track info
+        embed.add_field(
+            name="Title",
+            value=f"[{track.title}]({track.uri})",
+            inline=False
+        )
+
+        # Duration
+        if track.duration:
+            duration_str = self._format_duration(track.duration)
+            embed.add_field(name="Duration", value=duration_str, inline=True)
 
         # Loop status
         loop_mode = getattr(player, 'loop_mode', False)
         embed.add_field(name="Loop", value="On" if loop_mode else "Off", inline=True)
 
-        if elapsed and track.duration:
-            elapsed_str = self._format_duration(elapsed)
-            remaining_str = self._format_duration(track.duration - elapsed)
-            embed.add_field(name="Elapsed", value=elapsed_str, inline=True)
-            embed.add_field(name="Remaining", value=remaining_str, inline=True)
+        # Show elapsed and remaining time if requested
+        if show_progress and track.duration:
+            elapsed_ms = self._get_elapsed_time(player)
+            if elapsed_ms > 0:
+                elapsed_str = self._format_duration(elapsed_ms)
+                remaining_ms = max(0, track.duration - elapsed_ms)
+                remaining_str = self._format_duration(remaining_ms)
+                embed.add_field(name="Elapsed", value=elapsed_str, inline=True)
+                embed.add_field(name="Remaining", value=remaining_str, inline=True)
 
+        # Thumbnail
         if track.thumbnail:
             embed.set_thumbnail(url=track.thumbnail)
 
-        # Author info
-        embed.set_footer(text=f"Requested by {getattr(player, 'last_requester', 'Unknown')}")
+        # Requester info
+        requester = getattr(player, 'last_requester', getattr(track, 'requester', None))
+        if requester:
+            requester_name = requester.display_name if hasattr(requester, 'display_name') else str(requester)
+            embed.set_footer(text=f"Requested by {requester_name}")
 
         return embed
 
@@ -208,16 +231,32 @@ class MusicWavelinkCog(commands.Cog):
         return view
 
     async def _update_embed(self, player: wavelink.Player):
-        """Update the now playing embed with current position"""
+        """Update the now playing embed with current progress"""
         if not hasattr(player, 'current_message') or not player.current_track:
             return
 
         try:
-            elapsed = player.position
-            embed = self._create_now_playing_embed(player.current_track, player, elapsed)
+            embed = self._create_now_playing_embed(player.current_track, player, show_progress=True)
             await player.current_message.edit(embed=embed)
         except Exception as e:
             logger.error(f"Failed to update embed: {e}")
+
+    def _get_elapsed_time(self, player: wavelink.Player) -> int:
+        """Get elapsed time in milliseconds for current track"""
+        if not player.current_track:
+            return 0
+        
+        # Use player.position if available (more accurate)
+        if hasattr(player, 'position') and player.position:
+            return player.position
+        
+        # Fallback to calculating from track start time
+        track_start_time = getattr(player, 'track_start_time', None)
+        if track_start_time:
+            elapsed_seconds = time.time() - track_start_time
+            return int(elapsed_seconds * 1000)
+        
+        return 0
 
     @lru_cache(maxsize=128)
     def _format_duration(self, milliseconds: int) -> str:
@@ -245,9 +284,14 @@ class MusicWavelinkCog(commands.Cog):
         await player.seek(new_pos)
 
         time_display = self._format_duration(new_pos)
-        # Send feedback message
-        if hasattr(player, 'channel'):
-            await player.channel.send(f"Seeked to {time_display}")
+        
+        # Send feedback message to text channel
+        text_channel = getattr(player, 'text_channel', None)
+        if text_channel:
+            try:
+                await text_channel.send(f"Seeked to {time_display}.")
+            except:
+                pass
 
     def _get_search_query(self, search: str) -> str:
         """Process search query with YouTube-specific prefixes"""
@@ -273,6 +317,9 @@ class MusicWavelinkCog(commands.Cog):
             except Exception as e:
                 logger.error(f"Failed to connect to voice: {e}")
                 return await ctx.send("Failed to connect to voice channel.")
+
+        # Store text channel for messages
+        player.text_channel = ctx.channel
 
         # Move to user's channel if different
         if player.channel != ctx.author.voice.channel:
@@ -305,7 +352,7 @@ class MusicWavelinkCog(commands.Cog):
                 await ctx.reply(f"Queued #{position}: {track.title}")
             else:
                 await player.play(track)
-                player.last_requester = ctx.author.display_name
+                player.last_requester = ctx.author
 
     @commands.command()
     async def queue(self, ctx: commands.Context):
@@ -319,10 +366,10 @@ class MusicWavelinkCog(commands.Cog):
         # Show up to 10 tracks
         queue_list = list(player.queue)
         for i, track in enumerate(queue_list[:10], 1):
-            duration = self._format_duration(track.duration) if track.duration else "..."
+            duration_str = self._format_duration(track.duration) if track.duration else "..."
             embed.add_field(
                 name=f"{i}. {track.title}",
-                value=duration,
+                value=duration_str,
                 inline=False
             )
 
@@ -337,12 +384,13 @@ class MusicWavelinkCog(commands.Cog):
 
     @commands.command(aliases=["nowplaying"])
     async def np(self, ctx: commands.Context):
-        """Show currently playing track with current position"""
+        """Show currently playing track with progress"""
         player = ctx.voice_client
         if not player or not player.current_track:
             return await ctx.send("Nothing playing")
 
-        embed = self._create_now_playing_embed(player.current_track, player, player.position)
+        # Show embed with progress tracking
+        embed = self._create_now_playing_embed(player.current_track, player, show_progress=True)
         view = self._create_controls(player)
         await ctx.send(embed=embed, view=view)
 
@@ -351,6 +399,11 @@ class MusicWavelinkCog(commands.Cog):
         """Play music specifically from YouTube"""
         if not search.startswith(('http://', 'https://')):
             search = f'ytsearch:{search}'
+        
+        # Ensure player has text channel stored
+        if ctx.voice_client:
+            ctx.voice_client.text_channel = ctx.channel
+        
         await self.play(ctx, search=search)
 
     @commands.command()
@@ -358,8 +411,55 @@ class MusicWavelinkCog(commands.Cog):
         """Play music from YouTube Music"""
         if not search.startswith(('http://', 'https://')):
             search = f'ytmsearch:{search}'
+        
+        # Ensure player has text channel stored
+        if ctx.voice_client:
+            ctx.voice_client.text_channel = ctx.channel
+        
         await self.play(ctx, search=search)
 
+    @commands.command()
+    async def pause(self, ctx: commands.Context):
+        """Pause or resume the current track"""
+        player = ctx.voice_client
+        if not player:
+            return await ctx.send("Not connected to voice.")
+        
+        # Ensure text channel is set
+        player.text_channel = ctx.channel
+        
+        if player.paused:
+            await player.resume()
+            await ctx.send("Resumed playback.")
+            await self._update_embed(player)
+        else:
+            await player.pause()
+            await ctx.send("Paused playback.")
+            await self._update_embed(player)
+
+    @commands.command()
+    async def skip(self, ctx: commands.Context):
+        """Skip the current track"""
+        player = ctx.voice_client
+        if not player:
+            return await ctx.send("Not connected to voice.")
+        
+        if player.current_track:
+            await player.skip(force=True)
+            await ctx.send(f"{ctx.author.name} skipped")
+        else:
+            await ctx.send("Nothing to skip.")
+
+    @commands.command(name='stopmusic', aliases=['musicstop'])
+    async def stop_music(self, ctx: commands.Context):
+        """Stop playback and clear the queue"""
+        player = ctx.voice_client
+        if not player:
+            return await ctx.send("Not connected to voice.")
+        
+        player.queue.clear()
+        await player.stop()
+        await ctx.send("Stopped playback and cleared queue.")
 
     @commands.command()
     async def volume(self, ctx: commands.Context, level: int):
@@ -384,6 +484,17 @@ class MusicWavelinkCog(commands.Cog):
         await player.disconnect()
         await ctx.send("Disconnected from voice channel.")
 
+    @commands.command()
+    async def loop(self, ctx: commands.Context):
+        """Toggle loop mode for current track"""
+        player = ctx.voice_client
+        if not player:
+            return await ctx.send("Not connected to voice.")
+        
+        loop_mode = getattr(player, 'loop_mode', False)
+        player.loop_mode = not loop_mode
+        status = 'enabled' if player.loop_mode else 'disabled'
+        await ctx.send(f"Loop {status}.")
 
     @commands.command()
     async def clear(self, ctx: commands.Context):
@@ -424,6 +535,15 @@ class MusicWavelinkCog(commands.Cog):
                 player.queue.put(track)
         
         await ctx.send(f"Removed: {removed_track.title}")
+
+    @commands.command()
+    async def seek(self, ctx: commands.Context, seconds: int):
+        """Seek forward or backward by specified seconds"""
+        player = ctx.voice_client
+        if not player or not player.current_track:
+            return await ctx.send("Nothing is playing to seek.")
+        
+        await self.seek_player(player, seconds)
 
     def _parse_artist_title(self, title: str) -> tuple[str, str]:
         """Parse artist and title from track title"""
