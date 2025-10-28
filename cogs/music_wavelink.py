@@ -77,6 +77,11 @@ class MusicWavelinkCog(commands.Cog):
         await self.session.close()
 
     @commands.Cog.listener()
+    async def on_command(self, ctx):
+        """Log when any command is invoked"""
+        logger.info(f"Command invoked: {ctx.command.name} by {ctx.author.name}")
+
+    @commands.Cog.listener()
     async def on_wavelink_node_ready(self, payload: wavelink.NodeReadyEventPayload):
         """Handle node ready event"""
         logger.info(f"Wavelink node '{payload.node.identifier}' is ready")
@@ -322,6 +327,8 @@ class MusicWavelinkCog(commands.Cog):
     @commands.command()
     async def play(self, ctx: commands.Context, *, search: str):
         """Play music from YouTube or other sources"""
+        logger.info(f"Play command received from {ctx.author.name}: {search}")
+        
         if not ctx.author.voice:
             return await ctx.send("Join a voice channel first.")
 
@@ -568,6 +575,14 @@ class MusicWavelinkCog(commands.Cog):
             return await ctx.send("Nothing is playing to seek.")
         
         await self.seek_player(player, seconds)
+
+    @commands.command(name='musictest')
+    async def music_test(self, ctx: commands.Context):
+        """Test if music commands are responsive"""
+        logger.info(f"Music test command received from {ctx.author.name}")
+        player = ctx.voice_client
+        status = "playing" if player and player.playing else "not playing"
+        await ctx.send(f"Music bot is responsive! Status: {status}")
 
     def _parse_artist_title(self, title: str) -> tuple[str, str]:
         """Parse artist and title from track title"""
