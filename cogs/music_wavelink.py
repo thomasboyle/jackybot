@@ -155,13 +155,21 @@ class MusicWavelinkCog(commands.Cog):
         # Track info
         embed.add_field(
             name="Title",
-            value=f"[{track.title}]({track.uri})",
+            value=f"[{track.title}]({getattr(track, 'uri', 'Unknown URI')})",
             inline=False
         )
 
-        # Duration
-        if track.duration:
-            duration_str = self._format_duration(track.duration)
+        # Duration - handle different possible attribute names
+        duration_ms = None
+        if hasattr(track, 'duration') and track.duration:
+            duration_ms = track.duration
+        elif hasattr(track, 'length') and track.length:
+            duration_ms = track.length
+        elif hasattr(track, 'duration_ms'):
+            duration_ms = track.duration_ms
+
+        if duration_ms:
+            duration_str = self._format_duration(duration_ms)
             embed.add_field(name="Duration", value=duration_str, inline=True)
 
         # Loop status
@@ -169,18 +177,20 @@ class MusicWavelinkCog(commands.Cog):
         embed.add_field(name="Loop", value="On" if loop_mode else "Off", inline=True)
 
         # Show elapsed and remaining time if requested
-        if show_progress and track.duration:
+        if show_progress and duration_ms:
             elapsed_ms = self._get_elapsed_time(player)
             if elapsed_ms > 0:
                 elapsed_str = self._format_duration(elapsed_ms)
-                remaining_ms = max(0, track.duration - elapsed_ms)
+                remaining_ms = max(0, duration_ms - elapsed_ms)
                 remaining_str = self._format_duration(remaining_ms)
                 embed.add_field(name="Elapsed", value=elapsed_str, inline=True)
                 embed.add_field(name="Remaining", value=remaining_str, inline=True)
 
         # Thumbnail
-        if track.thumbnail:
+        if hasattr(track, 'thumbnail') and track.thumbnail:
             embed.set_thumbnail(url=track.thumbnail)
+        elif hasattr(track, 'artwork_url') and track.artwork_url:
+            embed.set_thumbnail(url=track.artwork_url)
 
         # Requester info
         requester = getattr(player, 'last_requester', getattr(track, 'requester', None))
@@ -624,18 +634,31 @@ class MusicWavelinkCog(commands.Cog):
             player = ctx.voice_client
             if not player:
                 return await ctx.send("No player connected")
-            
+
+            # Get track duration safely
+            duration_info = "None"
+            if player.current:
+                if hasattr(player.current, 'duration') and player.current.duration:
+                    duration_info = f"{player.current.duration}ms ({self._format_duration(player.current.duration)})"
+                elif hasattr(player.current, 'length') and player.current.length:
+                    duration_info = f"{player.current.length}ms ({self._format_duration(player.current.length)})"
+                elif hasattr(player.current, 'duration_ms'):
+                    duration_info = f"{player.current.duration_ms}ms ({self._format_duration(player.current.duration_ms)})"
+                else:
+                    duration_info = "Unknown"
+
             info_lines = [
                 f"Connected: {player.connected}",
                 f"Playing: {player.playing}",
                 f"Paused: {player.paused}",
                 f"Current track: {player.current.title if player.current else 'None'}",
+                f"Track duration: {duration_info}",
                 f"Queue size: {player.queue.count}",
                 f"Text channel set: {hasattr(player, 'text_channel')}",
                 f"Text channel: {player.text_channel.name if hasattr(player, 'text_channel') else 'Not set'}",
                 f"Has current_message: {hasattr(player, 'current_message')}"
             ]
-            
+
             await ctx.send("```\n" + "\n".join(info_lines) + "\n```")
         except Exception as e:
             await ctx.send(f"Error: {e}")
