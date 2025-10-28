@@ -84,48 +84,64 @@ class MusicWavelinkCog(commands.Cog):
     @commands.Cog.listener()
     async def on_wavelink_track_start(self, payload: wavelink.TrackStartEventPayload):
         """Handle track start event"""
-        player = payload.player
-        track = payload.track
+        try:
+            player = payload.player
+            track = payload.track
 
-        # Store track start time for elapsed tracking
-        player.track_start_time = time.time()
+            logger.info(f"Track started: {track.title}")
 
-        # Create embed for now playing
-        embed = self._create_now_playing_embed(track, player)
-        view = self._create_controls(player)
+            # Store track start time for elapsed tracking
+            player.track_start_time = time.time()
 
-        # Get the channel to send message to
-        channel = getattr(player, 'text_channel', None)
-        if channel:
+            # Get the channel to send message to
+            channel = getattr(player, 'text_channel', None)
+            if not channel:
+                logger.warning("No text_channel set on player, cannot send now playing embed")
+                return
+
+            # Create embed for now playing
+            embed = self._create_now_playing_embed(track, player)
+            view = self._create_controls(player)
+
             message = await channel.send(embed=embed, view=view)
             player.current_message = message
+            logger.info(f"Now playing embed sent for: {track.title}")
+        except Exception as e:
+            logger.error(f"Error in on_wavelink_track_start: {e}", exc_info=True)
 
     @commands.Cog.listener()
     async def on_wavelink_track_end(self, payload: wavelink.TrackEndEventPayload):
         """Handle track end event"""
-        player = payload.player
+        try:
+            player = payload.player
+            logger.info(f"Track ended: {payload.track.title if payload.track else 'Unknown'} (reason: {payload.reason})")
 
-        # Clear current message
-        if hasattr(player, 'current_message'):
-            try:
-                await player.current_message.delete()
-            except:
-                pass
-            delattr(player, 'current_message')
+            # Clear current message
+            if hasattr(player, 'current_message'):
+                try:
+                    await player.current_message.delete()
+                except:
+                    pass
+                delattr(player, 'current_message')
 
-        # Check if loop mode is enabled
-        loop_mode = getattr(player, 'loop_mode', False)
-        if loop_mode and payload.track and payload.reason == 'finished':
-            await player.play(payload.track)
-            return
+            # Check if loop mode is enabled
+            loop_mode = getattr(player, 'loop_mode', False)
+            if loop_mode and payload.track and payload.reason == 'finished':
+                logger.info("Loop mode enabled, replaying track")
+                await player.play(payload.track)
+                return
 
-        # Auto-play next track if not stopped manually
-        if not player.queue.is_empty and payload.reason != 'stopped':
-            next_track = player.queue.get()
-            await player.play(next_track)
-        elif player.queue.is_empty and payload.reason == 'finished':
-            # Auto-disconnect when queue is empty
-            await player.disconnect()
+            # Auto-play next track if not stopped manually
+            if not player.queue.is_empty and payload.reason != 'stopped':
+                next_track = player.queue.get()
+                logger.info(f"Playing next track from queue: {next_track.title}")
+                await player.play(next_track)
+            elif player.queue.is_empty and payload.reason == 'finished':
+                # Auto-disconnect when queue is empty
+                logger.info("Queue empty, disconnecting")
+                await player.disconnect()
+        except Exception as e:
+            logger.error(f"Error in on_wavelink_track_end: {e}", exc_info=True)
 
     def _create_now_playing_embed(self, track: wavelink.Playable, player: wavelink.Player, show_progress: bool = False) -> discord.Embed:
         """Create now playing embed with optional progress tracking"""
@@ -314,12 +330,14 @@ class MusicWavelinkCog(commands.Cog):
         if not player:
             try:
                 player = await ctx.author.voice.channel.connect(cls=wavelink.Player)
+                logger.info(f"Connected to voice channel: {ctx.author.voice.channel.name}")
             except Exception as e:
                 logger.error(f"Failed to connect to voice: {e}")
                 return await ctx.send("Failed to connect to voice channel.")
 
         # Store text channel for messages
         player.text_channel = ctx.channel
+        logger.info(f"Set text_channel to: {ctx.channel.name}")
 
         # Move to user's channel if different
         if player.channel != ctx.author.voice.channel:
@@ -351,6 +369,7 @@ class MusicWavelinkCog(commands.Cog):
                 position = player.queue.count + 1
                 await ctx.reply(f"Queued #{position}: {track.title}")
             else:
+                logger.info(f"Playing track: {track.title}")
                 await player.play(track)
                 player.last_requester = ctx.author
 
@@ -444,7 +463,12 @@ class MusicWavelinkCog(commands.Cog):
         if not player:
             return await ctx.send("Not connected to voice.")
         
+        # Ensure text channel is set for next track
+        player.text_channel = ctx.channel
+        
         if player.current_track:
+            track_title = player.current_track.title
+            logger.info(f"Skipping track: {track_title}")
             await player.skip(force=True)
             await ctx.send(f"{ctx.author.name} skipped")
         else:
