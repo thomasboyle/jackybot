@@ -411,14 +411,40 @@ class MusicWavelinkCog(commands.Cog):
     @commands.command(aliases=["nowplaying"])
     async def np(self, ctx: commands.Context):
         """Show currently playing track with progress"""
-        player = ctx.voice_client
-        if not player or not player.current_track:
-            return await ctx.send("Nothing playing")
+        try:
+            logger.info(f"NP command called by {ctx.author.name}")
+            player = ctx.voice_client
+            
+            if not player:
+                logger.warning("NP: No player found")
+                return await ctx.send("Nothing playing")
+            
+            if not player.current_track:
+                logger.warning("NP: No current track")
+                return await ctx.send("Nothing playing")
 
-        # Show embed with progress tracking
-        embed = self._create_now_playing_embed(player.current_track, player, show_progress=True)
-        view = self._create_controls(player)
-        await ctx.send(embed=embed, view=view)
+            logger.info(f"NP: Current track is {player.current_track.title}")
+            
+            # Show embed with progress tracking
+            try:
+                embed = self._create_now_playing_embed(player.current_track, player, show_progress=True)
+                logger.info("NP: Embed created successfully")
+            except Exception as embed_error:
+                logger.error(f"NP: Failed to create embed: {embed_error}", exc_info=True)
+                raise
+            
+            try:
+                view = self._create_controls(player)
+                logger.info("NP: Controls created successfully")
+            except Exception as view_error:
+                logger.error(f"NP: Failed to create controls: {view_error}", exc_info=True)
+                raise
+            
+            await ctx.send(embed=embed, view=view)
+            logger.info("NP: Embed sent successfully")
+        except Exception as e:
+            logger.error(f"NP command error: {e}", exc_info=True)
+            await ctx.send(f"Now playing failed: {e}")
 
     @commands.command()
     async def ytplay(self, ctx: commands.Context, *, search: str):
@@ -466,20 +492,27 @@ class MusicWavelinkCog(commands.Cog):
     @commands.command()
     async def skip(self, ctx: commands.Context):
         """Skip the current track"""
-        player = ctx.voice_client
-        if not player:
-            return await ctx.send("Not connected to voice.")
-        
-        # Ensure text channel is set for next track
-        player.text_channel = ctx.channel
-        
-        if player.current_track:
-            track_title = player.current_track.title
-            logger.info(f"Skipping track: {track_title}")
-            await player.skip(force=True)
-            await ctx.send(f"{ctx.author.name} skipped")
-        else:
-            await ctx.send("Nothing to skip.")
+        try:
+            logger.info(f"Skip command called by {ctx.author.name}")
+            player = ctx.voice_client
+            if not player:
+                logger.warning("Skip: No player found")
+                return await ctx.send("Not connected to voice.")
+            
+            # Ensure text channel is set for next track
+            player.text_channel = ctx.channel
+            
+            if player.current_track:
+                track_title = player.current_track.title
+                logger.info(f"Skipping track: {track_title}")
+                await player.skip(force=True)
+                await ctx.send(f"{ctx.author.name} skipped")
+            else:
+                logger.warning("Skip: No current track")
+                await ctx.send("Nothing to skip.")
+        except Exception as e:
+            logger.error(f"Skip command error: {e}", exc_info=True)
+            await ctx.send(f"Skip failed: {e}")
 
     @commands.command(name='stopmusic', aliases=['musicstop'])
     async def stop_music(self, ctx: commands.Context):
@@ -583,6 +616,51 @@ class MusicWavelinkCog(commands.Cog):
         player = ctx.voice_client
         status = "playing" if player and player.playing else "not playing"
         await ctx.send(f"Music bot is responsive! Status: {status}")
+
+    @commands.command(name='playerinfo')
+    async def player_info(self, ctx: commands.Context):
+        """Show detailed player information for debugging"""
+        try:
+            player = ctx.voice_client
+            if not player:
+                return await ctx.send("No player connected")
+            
+            info_lines = [
+                f"Connected: {player.connected}",
+                f"Playing: {player.playing}",
+                f"Paused: {player.paused}",
+                f"Current track: {player.current_track.title if player.current_track else 'None'}",
+                f"Queue size: {player.queue.count}",
+                f"Text channel set: {hasattr(player, 'text_channel')}",
+                f"Text channel: {player.text_channel.name if hasattr(player, 'text_channel') else 'Not set'}",
+                f"Has current_message: {hasattr(player, 'current_message')}"
+            ]
+            
+            await ctx.send("```\n" + "\n".join(info_lines) + "\n```")
+        except Exception as e:
+            await ctx.send(f"Error: {e}")
+
+    @commands.command(name='testembed')
+    async def test_embed(self, ctx: commands.Context):
+        """Test sending an embed with controls"""
+        try:
+            player = ctx.voice_client
+            if not player or not player.current_track:
+                return await ctx.send("No track playing to test with")
+            
+            logger.info("Creating test embed...")
+            embed = discord.Embed(title="🎵 Test Embed", color=0x00FF00)
+            embed.add_field(name="Track", value=player.current_track.title, inline=False)
+            
+            logger.info("Creating test controls...")
+            view = self._create_controls(player)
+            
+            logger.info("Sending test embed...")
+            await ctx.send(embed=embed, view=view)
+            logger.info("Test embed sent successfully!")
+        except Exception as e:
+            logger.error(f"Test embed failed: {e}", exc_info=True)
+            await ctx.send(f"Test failed: {e}")
 
     def _parse_artist_title(self, title: str) -> tuple[str, str]:
         """Parse artist and title from track title"""
