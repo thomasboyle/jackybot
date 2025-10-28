@@ -52,13 +52,14 @@ class MusicBotCog(commands.Cog):
             }
         }
 
-        # Use cookies from assets/cookies.txt to bypass YouTube bot detection
+        # YouTube authentication setup (cookies only - OAuth2 no longer supported by yt-dlp)
         cookies_path = os.path.join(os.path.dirname(__file__), '..', 'assets', 'cookies.txt')
+
         if os.path.exists(cookies_path):
             ydl_opts['cookiefile'] = cookies_path
             logger.info("Using cookies from assets/cookies.txt")
         else:
-            logger.warning("No cookies.txt found in assets folder. YouTube may block requests. See SERVER_SETUP.md for cookie setup instructions.")
+            logger.warning("No YouTube cookies found. Limited functionality. Run setup_youtube_auth.py for cookie setup instructions.")
 
         self.ydl = yt_dlp.YoutubeDL(ydl_opts)
         
