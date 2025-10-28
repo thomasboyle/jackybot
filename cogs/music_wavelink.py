@@ -233,8 +233,14 @@ class MusicWavelinkCog(commands.Cog):
 
                 elif action in ('fwd', 'back'):
                     seconds = 10 if action == 'fwd' else -10
-                    await self.seek_player(player, seconds)
-                    await interaction.response.defer()
+                    logger.info(f"Seeking {seconds} seconds")
+                    try:
+                        await self.seek_player(player, seconds)
+                        await interaction.response.send_message(f"Seeked {seconds:+d} seconds", ephemeral=True)
+                        logger.info("Seek successful")
+                    except Exception as seek_error:
+                        logger.error(f"Seek failed: {seek_error}", exc_info=True)
+                        await interaction.response.send_message(f"Seek failed: {seek_error}", ephemeral=True)
 
                 elif action == 'lyrics':
                     await self.get_lyrics(interaction, player)
@@ -307,22 +313,37 @@ class MusicWavelinkCog(commands.Cog):
     async def seek_player(self, player: wavelink.Player, seconds: int):
         """Seek the player by relative seconds"""
         if not player.current:
+            logger.warning("Seek: No current track")
             return
 
-        current_pos = player.position
-        new_pos = max(0, min(current_pos + (seconds * 1000), player.current.duration))
+        # Get current position safely
+        current_pos = getattr(player, 'position', 0)
+        if current_pos is None:
+            current_pos = 0
 
+        # Get track duration safely
+        track_duration = None
+        if hasattr(player.current, 'duration') and player.current.duration:
+            track_duration = player.current.duration
+        elif hasattr(player.current, 'length') and player.current.length:
+            track_duration = player.current.length
+        elif hasattr(player.current, 'duration_ms'):
+            track_duration = player.current.duration_ms
+
+        logger.info(f"Seeking: current_pos={current_pos}, track_duration={track_duration}, seconds={seconds}, player.playing={player.playing}")
+
+        if track_duration:
+            new_pos = max(0, min(current_pos + (seconds * 1000), track_duration))
+        else:
+            new_pos = max(0, current_pos + (seconds * 1000))  # No limit if duration unknown
+
+        logger.info(f"Seeking to position: {new_pos}ms")
         await player.seek(new_pos)
 
         time_display = self._format_duration(new_pos)
-        
-        # Send feedback message to text channel
-        text_channel = getattr(player, 'text_channel', None)
-        if text_channel:
-            try:
-                await text_channel.send(f"Seeked to {time_display}.")
-            except:
-                pass
+
+        # Don't send channel message here - let the caller handle feedback
+        logger.info(f"Seek completed to {time_display}")
 
     def _get_search_query(self, search: str) -> str:
         """Process search query with YouTube-specific prefixes"""
@@ -616,8 +637,9 @@ class MusicWavelinkCog(commands.Cog):
         player = ctx.voice_client
         if not player or not player.current:
             return await ctx.send("Nothing is playing to seek.")
-        
+
         await self.seek_player(player, seconds)
+        await ctx.send(f"Seeked {seconds:+d} seconds")
 
     @commands.command(name='musictest')
     async def music_test(self, ctx: commands.Context):
