@@ -253,18 +253,18 @@ class MusicWavelinkCog(commands.Cog):
 
     async def _update_embed(self, player: wavelink.Player):
         """Update the now playing embed with current progress"""
-        if not hasattr(player, 'current_message') or not player.current_track:
+        if not hasattr(player, 'current_message') or not player.current:
             return
 
         try:
-            embed = self._create_now_playing_embed(player.current_track, player, show_progress=True)
+            embed = self._create_now_playing_embed(player.current, player, show_progress=True)
             await player.current_message.edit(embed=embed)
         except Exception as e:
             logger.error(f"Failed to update embed: {e}")
 
     def _get_elapsed_time(self, player: wavelink.Player) -> int:
         """Get elapsed time in milliseconds for current track"""
-        if not player.current_track:
+        if not player.current:
             return 0
         
         # Use player.position if available (more accurate)
@@ -296,11 +296,11 @@ class MusicWavelinkCog(commands.Cog):
 
     async def seek_player(self, player: wavelink.Player, seconds: int):
         """Seek the player by relative seconds"""
-        if not player.current_track:
+        if not player.current:
             return
 
         current_pos = player.position
-        new_pos = max(0, min(current_pos + (seconds * 1000), player.current_track.duration))
+        new_pos = max(0, min(current_pos + (seconds * 1000), player.current.duration))
 
         await player.seek(new_pos)
 
@@ -419,15 +419,15 @@ class MusicWavelinkCog(commands.Cog):
                 logger.warning("NP: No player found")
                 return await ctx.send("Nothing playing")
             
-            if not player.current_track:
+            if not player.current:
                 logger.warning("NP: No current track")
                 return await ctx.send("Nothing playing")
 
-            logger.info(f"NP: Current track is {player.current_track.title}")
+            logger.info(f"NP: Current track is {player.current.title}")
             
             # Show embed with progress tracking
             try:
-                embed = self._create_now_playing_embed(player.current_track, player, show_progress=True)
+                embed = self._create_now_playing_embed(player.current, player, show_progress=True)
                 logger.info("NP: Embed created successfully")
             except Exception as embed_error:
                 logger.error(f"NP: Failed to create embed: {embed_error}", exc_info=True)
@@ -502,8 +502,8 @@ class MusicWavelinkCog(commands.Cog):
             # Ensure text channel is set for next track
             player.text_channel = ctx.channel
             
-            if player.current_track:
-                track_title = player.current_track.title
+            if player.current:
+                track_title = player.current.title
                 logger.info(f"Skipping track: {track_title}")
                 await player.skip(force=True)
                 await ctx.send(f"{ctx.author.name} skipped")
@@ -604,7 +604,7 @@ class MusicWavelinkCog(commands.Cog):
     async def seek(self, ctx: commands.Context, seconds: int):
         """Seek forward or backward by specified seconds"""
         player = ctx.voice_client
-        if not player or not player.current_track:
+        if not player or not player.current:
             return await ctx.send("Nothing is playing to seek.")
         
         await self.seek_player(player, seconds)
@@ -629,7 +629,7 @@ class MusicWavelinkCog(commands.Cog):
                 f"Connected: {player.connected}",
                 f"Playing: {player.playing}",
                 f"Paused: {player.paused}",
-                f"Current track: {player.current_track.title if player.current_track else 'None'}",
+                f"Current track: {player.current.title if player.current else 'None'}",
                 f"Queue size: {player.queue.count}",
                 f"Text channel set: {hasattr(player, 'text_channel')}",
                 f"Text channel: {player.text_channel.name if hasattr(player, 'text_channel') else 'Not set'}",
@@ -645,12 +645,12 @@ class MusicWavelinkCog(commands.Cog):
         """Test sending an embed with controls"""
         try:
             player = ctx.voice_client
-            if not player or not player.current_track:
+            if not player or not player.current:
                 return await ctx.send("No track playing to test with")
             
             logger.info("Creating test embed...")
             embed = discord.Embed(title="🎵 Test Embed", color=0x00FF00)
-            embed.add_field(name="Track", value=player.current_track.title, inline=False)
+            embed.add_field(name="Track", value=player.current.title, inline=False)
             
             logger.info("Creating test controls...")
             view = self._create_controls(player)
@@ -699,12 +699,12 @@ class MusicWavelinkCog(commands.Cog):
 
     async def get_lyrics(self, interaction: discord.Interaction, player: wavelink.Player):
         """Fetch lyrics for current track"""
-        if not player.current_track:
+        if not player.current:
             return await interaction.response.send_message("No song is currently playing.", ephemeral=True)
 
         await interaction.response.defer(ephemeral=True)
 
-        track_title = player.current_track.title
+        track_title = player.current.title
         logger.info(f"Fetching lyrics for: '{track_title}'")
 
         # Parse artist and title
