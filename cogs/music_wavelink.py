@@ -870,15 +870,7 @@ class MusicWavelinkCog(commands.Cog):
         # Create YouTube search URL
         youtube_url = f"https://www.youtube.com/search?q={encoded_query}"
 
-        embed = discord.Embed(
-            title="❤️ YouTube Search",
-            description=f"**{player.current.title}**\n\n[Search on YouTube]({youtube_url})",
-            color=0xFF0000
-        )
-
-        embed.set_footer(text="Click the link above to search for this song on YouTube")
-
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.followup.send(f"🔍 **YouTube Search:** {youtube_url}", ephemeral=True)
 
     async def get_lyrics(self, interaction: discord.Interaction, player: wavelink.Player):
         """Fetch lyrics for current track"""
@@ -999,15 +991,7 @@ class MusicWavelinkCog(commands.Cog):
         # Create Spotify search URL
         spotify_url = f"https://open.spotify.com/search/{encoded_query}"
 
-        embed = discord.Embed(
-            title="🎵 Add to Spotify",
-            description=f"**{player.current.title}**\n\n[Search on Spotify]({spotify_url})",
-            color=0x1DB954
-        )
-
-        embed.set_footer(text="Click the link above to search for this song on Spotify")
-
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.followup.send(f"🎵 **Spotify Search:** {spotify_url}", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(MusicWavelinkCog(bot))
