@@ -221,8 +221,15 @@ class MusicWavelinkCog(commands.Cog):
                 embed.add_field(name="Elapsed", value=elapsed_str, inline=True)
                 embed.add_field(name="Remaining", value=remaining_str, inline=True)
 
-        # Thumbnail
+        # Thumbnail - try multiple sources for YouTube thumbnails
         thumbnail = getattr(track, 'thumbnail', None) or getattr(track, 'artwork_url', None)
+
+        if not thumbnail:
+            # Try to extract YouTube thumbnail from URL
+            track_uri = getattr(track, 'uri', None)
+            if track_uri and 'youtube.com' in track_uri or 'youtu.be' in track_uri:
+                thumbnail = self._get_youtube_thumbnail(track_uri)
+
         if thumbnail:
             embed.set_thumbnail(url=thumbnail)
 
@@ -710,6 +717,26 @@ class MusicWavelinkCog(commands.Cog):
 
         # If no separator found, assume the whole thing is the title
         return "", cleaned
+
+    def _get_youtube_thumbnail(self, url: str) -> Optional[str]:
+        """Extract YouTube video ID and return high-quality thumbnail URL"""
+        import re
+
+        # YouTube URL patterns
+        patterns = [
+            r'(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})',  # Standard and short URLs
+            r'youtube\.com\/embed\/([a-zA-Z0-9_-]{11})',  # Embed URLs
+            r'youtube\.com\/v\/([a-zA-Z0-9_-]{11})'  # Old embed format
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, url)
+            if match:
+                video_id = match.group(1)
+                # Return high-quality thumbnail, fallback to medium quality if needed
+                return f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg"
+
+        return None
 
     async def get_lyrics(self, interaction: discord.Interaction, player: wavelink.Player):
         """Fetch lyrics for current track"""
