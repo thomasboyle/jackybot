@@ -80,7 +80,7 @@ class MusicWavelinkCog(commands.Cog):
         async def idle_disconnect():
             try:
                 await asyncio.sleep(30)  # Wait 30 seconds
-                if player.connected and not player.playing and player.queue.is_empty:
+                if player.connected and not player.playing and len(player.queue) == 0:
                     await player.disconnect()
                     logger.info("Bot disconnected due to idle timeout")
             except Exception as e:
@@ -150,10 +150,10 @@ class MusicWavelinkCog(commands.Cog):
                 return
 
             # Auto-play next track if not stopped manually
-            if not player.queue.is_empty and payload.reason != 'stopped':
+            if len(player.queue) > 0 and payload.reason != 'stopped':
                 next_track = player.queue.get()
                 await player.play(next_track)
-            elif player.queue.is_empty and payload.reason == 'finished':
+            elif len(player.queue) == 0 and payload.reason == 'finished':
                 # Start idle timer instead of immediate disconnect
                 await self._start_idle_timer(player)
         except Exception as e:
@@ -214,13 +214,14 @@ class MusicWavelinkCog(commands.Cog):
 
             try:
                 if action == 'pause':
-                    if player.paused:
+                    if getattr(player, 'paused', False):
                         await player.resume()
-                        await interaction.response.send_message("Resumed playback.", ephemeral=True)
+                        message = "Resumed playback."
                     else:
                         await player.pause()
-                        await interaction.response.send_message("Paused playback.", ephemeral=True)
+                        message = "Paused playback."
 
+                    await interaction.response.send_message(message, ephemeral=True)
                     await self._update_embed(player)
 
                 elif action == 'skip':
@@ -439,7 +440,7 @@ class MusicWavelinkCog(commands.Cog):
         except commands.CommandError as e:
             return await ctx.reply(str(e))
 
-        if player.queue.is_empty:
+        if not player.queue or len(player.queue) == 0:
             return await ctx.reply("Queue is empty")
 
         embed = discord.Embed(title="🎶 Queue", color=0x0000FF)
@@ -602,7 +603,7 @@ class MusicWavelinkCog(commands.Cog):
         except commands.CommandError as e:
             return await ctx.send(str(e))
 
-        if player.queue.is_empty:
+        if len(player.queue) == 0:
             return await ctx.send("Queue is empty.")
 
         player.queue.shuffle()
@@ -616,7 +617,7 @@ class MusicWavelinkCog(commands.Cog):
         except commands.CommandError as e:
             return await ctx.send(str(e))
 
-        if player.queue.is_empty:
+        if len(player.queue) == 0:
             return await ctx.send("Queue is empty.")
 
         try:
