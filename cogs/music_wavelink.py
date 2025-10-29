@@ -175,7 +175,7 @@ class MusicWavelinkCog(commands.Cog):
         else:
             color = 0x57F287  # Green when playing
 
-        embed = discord.Embed(title="🎵 Now Playing", color=color, timestamp=discord.utils.utcnow())
+        embed = discord.Embed(title="Now Playing", color=color, timestamp=discord.utils.utcnow())
 
         # Try to get artist from track attributes first
         artist = getattr(track, 'author', None) or getattr(track, 'artist', None)
@@ -192,11 +192,8 @@ class MusicWavelinkCog(commands.Cog):
         if not title:
             title = track.title
 
-        # Author section with emoji
-        embed.set_author(name=f"🎤 {artist}")
-
-        # Main description: Song title in bold
-        embed.description = f"**{title}**"
+        # Main description: Artist below title, then song title with music note
+        embed.description = f"🎤 **{artist}**\n\n🎵 **{title}**"
 
         # Get duration and elapsed time
         duration_ms = getattr(track, 'duration', None) or getattr(track, 'length', None) or getattr(track, 'duration_ms', None)
@@ -269,8 +266,8 @@ class MusicWavelinkCog(commands.Cog):
                     await self._update_embed(player)
 
                 elif action == 'skip':
-                    if not player.queue or len(player.queue) == 0:
-                        return await interaction.response.send_message("No songs in queue to skip to.", ephemeral=True)
+                    if not player.current:
+                        return await interaction.response.send_message("No song is currently playing.", ephemeral=True)
                     await player.skip()
                     await interaction.response.send_message(f"{interaction.user.name} skipped", ephemeral=True)
 
@@ -332,18 +329,18 @@ class MusicWavelinkCog(commands.Cog):
 
         # Row 1 - Playback Controls
         row1_buttons = [
-            ("⏮️", 'back', discord.ButtonStyle.primary, player.current is not None),  # Seek back -10s
-            ("⏯️", 'pause', discord.ButtonStyle.primary, True),  # Play/Pause
-            ("⏭️", 'fwd', discord.ButtonStyle.primary, player.current is not None),   # Seek forward +10s
-            ("⏩", 'skip', discord.ButtonStyle.primary, player.queue and len(player.queue) > 0),  # Skip
-            ("🔁", 'loop', discord.ButtonStyle.success if getattr(player, 'loop_mode', False) else discord.ButtonStyle.secondary, True),  # Loop
+            ("⏮️", 'back', discord.ButtonStyle.secondary, player.current is not None),  # Seek back -10s
+            ("⏯️", 'pause', discord.ButtonStyle.secondary, True),  # Play/Pause
+            ("⏭️", 'fwd', discord.ButtonStyle.secondary, player.current is not None),   # Seek forward +10s
+            ("⏩", 'skip', discord.ButtonStyle.secondary, True),  # Skip (always enabled)
+            ("🔁", 'loop', discord.ButtonStyle.secondary, True),  # Loop
         ]
 
         # Row 2 - Utility Features
         row2_buttons = [
-            ("📝", 'lyrics', discord.ButtonStyle.secondary, True),    # Lyrics
-            ("💚", 'spotify', discord.ButtonStyle.success, True),     # Spotify
-            ("❤️", 'youtube', discord.ButtonStyle.success, True),     # YouTube
+            ("📜", 'lyrics', discord.ButtonStyle.secondary, True),    # Lyrics (scroll emoji)
+            ("💚", 'spotify', discord.ButtonStyle.secondary, True),     # Spotify
+            ("❤️", 'youtube', discord.ButtonStyle.secondary, True),     # YouTube
             ("📋", 'queue', discord.ButtonStyle.secondary, True),     # Queue
         ]
 
@@ -524,7 +521,7 @@ class MusicWavelinkCog(commands.Cog):
         try:
             player = await self._ensure_player(ctx)
         except commands.CommandError as e:
-            return await ctx.send(str(e))
+            return await ctx.reply(str(e))
 
         # Cancel idle timer since we're adding tracks
         await self._cancel_idle_timer(player)
@@ -535,7 +532,7 @@ class MusicWavelinkCog(commands.Cog):
         # Search for tracks
         tracks = await wavelink.Playable.search(search_query)
         if not tracks:
-            return await ctx.send("No results found.")
+            return await ctx.reply("No results found.")
 
         # Handle single track or playlist
         if isinstance(tracks, wavelink.Playlist):
@@ -544,7 +541,7 @@ class MusicWavelinkCog(commands.Cog):
                 track.requester = ctx.author
                 player.queue.put(track)
 
-            await ctx.send(f"Queued playlist: {tracks.name} ({len(tracks)} tracks)")
+            await ctx.reply(f"Queued playlist: {tracks.name} ({len(tracks)} tracks)")
         else:
             # Single track
             track = tracks[0]
