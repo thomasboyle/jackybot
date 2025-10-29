@@ -668,10 +668,22 @@ class MusicWavelinkCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
 
+        # Use the same artist/title extraction logic as the embed
+        artist = getattr(player.current, 'author', None) or getattr(player.current, 'artist', None)
         track_title = player.current.title
 
-        # Parse artist and title
-        artist, title = self._parse_artist_title(track_title)
+        if not artist:
+            # Fallback to parsing the title for artist/title separation
+            artist, parsed_title = self._parse_artist_title(track_title)
+            title = parsed_title
+        else:
+            title = track_title
+
+        # Clean up artist/title if needed (same as embed)
+        if not artist or artist in ["", "Various Artists", "Unknown Artist"]:
+            artist = "Unknown Artist"
+        if not title:
+            title = track_title
 
         async def try_lyrics_request(try_artist: str, try_title: str, attempt_name: str) -> bool:
             """Try to fetch lyrics with given artist/title combination"""
@@ -715,28 +727,29 @@ class MusicWavelinkCog(commands.Cog):
                 return False
 
         try:
-            # First attempt: use parsed artist and title (only if we have an artist)
-            if artist and artist not in ["", "Various Artists", "Unknown Artist"]:
-                success = await try_lyrics_request(artist, title, "Primary attempt")
-                if success:
-                    return
+            # First attempt: use artist and title from embed
+            success = await try_lyrics_request(artist, title, f"Primary attempt with '{artist}' - '{title}'")
+            if success:
+                return
 
-                # If primary attempt failed and artist contains commas (multiple artists),
-                # try with just the first artist
-                if ',' in artist:
-                    first_artist = artist.split(',')[0].strip()
-                    if await try_lyrics_request(first_artist, title, f"First artist '{first_artist}'"):
-                        return
+            # If primary attempt failed and artist contains commas (multiple artists),
+            # try with just the first artist
+            if ',' in artist:
+                first_artist = artist.split(',')[0].strip()
+                if await try_lyrics_request(first_artist, title, f"First artist '{first_artist}'"):
+                    return
 
             # Second attempt: try with title as artist (common for well-known songs)
             if await try_lyrics_request(title, title, "Title as artist"):
                 return
 
-            # Third attempt: try with common generic artists
-            common_artists = ["Various Artists", "Unknown Artist", "Various", "Classic", "Popular"]
+            # Third attempt: try with common generic artists (skip if we already tried "Unknown Artist")
+            common_artists = ["Various Artists", "Various", "Classic", "Popular"]
             for try_artist in common_artists:
-                if await try_lyrics_request(try_artist, title, f"Generic artist '{try_artist}'"):
-                    return
+                if try_artist != artist:  # Skip if we already tried this
+                    if await try_lyrics_request(try_artist, title, f"Generic artist '{try_artist}'"):
+                        return
+            
             await interaction.followup.send(
                 f"No lyrics found for this song. The lyrics database may not have this track, or it might be too new. Try searching for the official lyrics online.",
                 ephemeral=True
