@@ -1,0 +1,178 @@
+[
+  {
+    "name": "groq_chat",
+    "display_name": "AI Chat",
+    "description": "AI-powered chat using Groq API with context management",
+    "category": "AI",
+    "icon": "🤖"
+  },
+  {
+    "name": "ai_audio",
+    "display_name": "AI Audio",
+    "description": "AI audio generation and processing",
+    "category": "AI",
+    "icon": "🎵"
+  },
+  {
+    "name": "voice_chat",
+    "display_name": "Voice Chat",
+    "description": "Voice chat integration and management",
+    "category": "Voice",
+    "icon": "🎤"
+  },
+  {
+    "name": "record",
+    "display_name": "Voice Recording",
+    "description": "Record voice channels",
+    "category": "Voice",
+    "icon": "⏺️"
+  },
+  {
+    "name": "music_wavelink",
+    "display_name": "Music Player",
+    "description": "Play music using Wavelink",
+    "category": "Music",
+    "icon": "🎶"
+  },
+  {
+    "name": "movies",
+    "display_name": "Movie Manager",
+    "description": "Movie watchlist and suggestions",
+    "category": "Entertainment",
+    "icon": "🎬"
+  },
+  {
+    "name": "freegames",
+    "display_name": "Free Games",
+    "description": "Track free game offers",
+    "category": "Entertainment",
+    "icon": "🎮"
+  },
+  {
+    "name": "trivia",
+    "display_name": "Trivia",
+    "description": "Play trivia games",
+    "category": "Fun",
+    "icon": "❓"
+  },
+  {
+    "name": "lovescore",
+    "display_name": "Love Score",
+    "description": "Calculate love compatibility",
+    "category": "Fun",
+    "icon": "💕"
+  },
+  {
+    "name": "aura",
+    "display_name": "Aura Points",
+    "description": "Track aura points for users",
+    "category": "Fun",
+    "icon": "✨"
+  },
+  {
+    "name": "gyat",
+    "display_name": "GYAT",
+    "description": "GYAT meme commands",
+    "category": "Fun",
+    "icon": "😳"
+  },
+  {
+    "name": "triggered",
+    "display_name": "Triggered",
+    "description": "Generate triggered memes",
+    "category": "Fun",
+    "icon": "😡"
+  },
+  {
+    "name": "homelander",
+    "display_name": "Homelander",
+    "description": "Homelander meme generator",
+    "category": "Fun",
+    "icon": "🦸"
+  },
+  {
+    "name": "server_manager",
+    "display_name": "Server Manager",
+    "description": "AI-powered server management and analytics",
+    "category": "Management",
+    "icon": "🤖"
+  },
+  {
+    "name": "role_management",
+    "display_name": "Role Manager",
+    "description": "Manage server roles and permissions",
+    "category": "Management",
+    "icon": "👥"
+  },
+  {
+    "name": "poll",
+    "display_name": "Polls",
+    "description": "Create and manage polls",
+    "category": "Utility",
+    "icon": "📊"
+  },
+  {
+    "name": "suggestions",
+    "display_name": "Suggestions",
+    "description": "Server suggestion system",
+    "category": "Utility",
+    "icon": "💡"
+  },
+  {
+    "name": "highlights",
+    "display_name": "Highlights",
+    "description": "Highlight messages and notifications",
+    "category": "Utility",
+    "icon": "⭐"
+  },
+  {
+    "name": "timezone",
+    "display_name": "Timezone",
+    "description": "Timezone conversion utilities",
+    "category": "Utility",
+    "icon": "🌍"
+  },
+  {
+    "name": "randomnumber",
+    "display_name": "Random Number",
+    "description": "Generate random numbers",
+    "category": "Utility",
+    "icon": "🎲"
+  },
+  {
+    "name": "context_manager",
+    "display_name": "Context Manager",
+    "description": "Manage AI conversation context",
+    "category": "Utility",
+    "icon": "📝"
+  },
+  {
+    "name": "punisher",
+    "display_name": "Punisher",
+    "description": "Moderation and punishment system",
+    "category": "Moderation",
+    "icon": "🔨"
+  },
+  {
+    "name": "zen_updates",
+    "display_name": "Zen Updates",
+    "description": "Zen browser update notifications",
+    "category": "Updates",
+    "icon": "🌟"
+  },
+  {
+    "name": "steamos_updates",
+    "display_name": "SteamOS Updates",
+    "description": "SteamOS update notifications",
+    "category": "Updates",
+    "icon": "🎮"
+  },
+  {
+    "name": "help",
+    "display_name": "Help",
+    "description": "Bot help and command information",
+    "category": "Utility",
+    "icon": "❔"
+  }
+]
+
