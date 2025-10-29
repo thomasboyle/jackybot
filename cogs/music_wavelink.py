@@ -536,10 +536,8 @@ class MusicWavelinkCog(commands.Cog):
                 position = player.queue.count + 1
                 await ctx.reply(f"Queued #{position}: {track.title}")
             else:
-                await player.play(track)
                 player.last_requester = ctx.author
-                # Send now playing embed as reply to the play command
-                await self._send_now_playing(ctx, player)
+                await player.play(track)
 
 
     @commands.command()
