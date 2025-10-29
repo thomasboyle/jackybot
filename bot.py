@@ -8,9 +8,7 @@ from discord.ext import commands
 from gtts import gTTS
 from groq import Groq
 import json
-from concurrent.futures import ThreadPoolExecutor
 import time
-from collections import deque
 import signal
 import sys
 
@@ -62,11 +60,12 @@ class ConnectionPool:
 class BotState:
     def __init__(self):
         self.jackychat_channels = {}
-        self.processed_messages = deque(maxlen=Config.MAX_PROCESSED_MESSAGES)
+        self.processed_messages = set()
         self.last_save_time = 0
+        self.last_cleanup_time = time.time()
+        self.broadcast_semaphore = asyncio.Semaphore(5)
 
 bot.pool = ConnectionPool()
-bot.executor = ThreadPoolExecutor(max_workers=Config.MAX_WORKERS)
 bot.state = BotState()
 
 # Cleanup task
@@ -74,6 +73,7 @@ async def cleanup_task():
     while True:
         await asyncio.sleep(Config.CLEANUP_INTERVAL)
         bot.state.processed_messages.clear()
+        bot.state.last_cleanup_time = time.time()
 
 # Setup hook
 async def setup_hook():
@@ -130,7 +130,7 @@ async def on_message(message):
     message_id = f"{message.channel.id}-{message.id}"
     if message_id in bot.state.processed_messages:
         return
-    bot.state.processed_messages.append(message_id)
+    bot.state.processed_messages.add(message_id)
     
     if "jackybot-chat" in message.channel.name:
         guild_id = message.guild.id
@@ -143,15 +143,41 @@ async def on_message(message):
             embed.set_image(url=message.attachments[0].url)
         
         tasks = [
-            ch.send(embed=embed) for gid, ch in bot.state.jackychat_channels.items()
+            send_with_rate_limit(ch, embed, bot.state.broadcast_semaphore)
+            for gid, ch in bot.state.jackychat_channels.items()
             if gid != guild_id and ch
         ]
         if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+            asyncio.create_task(asyncio.gather(*tasks))
     
     await bot.process_commands(message)
 
 # Note: discord.py has no on_close event; cleanup is handled in shutdown/main
+
+# Rate-limited broadcast function
+async def send_with_rate_limit(channel, embed, semaphore):
+    """Send message with rate limiting and error handling."""
+    async with semaphore:
+        try:
+            await channel.send(embed=embed)
+            await asyncio.sleep(0.2)
+        except discord.Forbidden:
+            print(f"Missing permissions in channel {channel.id}")
+            return None
+        except discord.HTTPException as e:
+            if e.status == 429:
+                retry_after = e.retry_after if hasattr(e, 'retry_after') else 5
+                print(f"Rate limited, waiting {retry_after}s")
+                await asyncio.sleep(retry_after)
+                try:
+                    return await channel.send(embed=embed)
+                except Exception:
+                    return None
+            print(f"Failed to send to {channel.id}: {e}")
+            return None
+        except Exception as e:
+            print(f"Unexpected error sending to {channel.id}: {e}")
+            return None
 
 # Ping command
 @bot.command()
@@ -195,11 +221,14 @@ async def tts(ctx, *, message):
 
     temp_file = f"temp_{ctx.message.id}.mp3"
     try:
-        await bot.loop.run_in_executor(bot.executor, lambda: gTTS(text=message, lang='en').save(temp_file))
+        await asyncio.to_thread(gTTS(text=message, lang='en').save, temp_file)
         def _after(play_error):
             if play_error:
                 print(f"Error in voice playback: {play_error}")
-            asyncio.run_coroutine_threadsafe(delete_file(temp_file), bot.loop)
+            try:
+                asyncio.create_task(delete_file(temp_file))
+            except RuntimeError:
+                pass
         vc.play(discord.FFmpegPCMAudio(temp_file), after=_after)
     except Exception as e:
         await ctx.reply("Failed to generate TTS audio.")
@@ -209,7 +238,7 @@ async def tts(ctx, *, message):
 # File deletion utility
 async def delete_file(filename):
     try:
-        await bot.loop.run_in_executor(bot.executor, os.remove, filename)
+        await asyncio.to_thread(os.remove, filename)
     except FileNotFoundError:
         pass
     except Exception as e:
@@ -278,8 +307,7 @@ async def shutdown(signal, loop):
         if bot.pool:
             await bot.pool.close()
     finally:
-        if bot.executor:
-            bot.executor.shutdown(wait=False)
+        pass
     await bot.close()
     loop.stop()
 
@@ -306,8 +334,7 @@ async def main():
             if bot.pool:
                 await bot.pool.close()
         finally:
-            if bot.executor:
-                bot.executor.shutdown(wait=False)
+            pass
         if not bot.is_closed():
             await bot.close()
 
