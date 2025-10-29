@@ -111,9 +111,9 @@ class MusicWavelinkCog(commands.Cog):
             if getattr(player, 'loop_mode', False) and payload.track and payload.reason == 'finished':
                 await player.play(payload.track)
                 return
-            if len(player.queue) > 0 and payload.reason != 'stopped':
+            if len(player.queue) > 0 and payload.reason not in ('replaced', 'loadFailed'):
                 await player.play(player.queue.get())
-            elif len(player.queue) == 0 and payload.reason == 'finished':
+            elif len(player.queue) == 0 and payload.reason in ('finished', 'stopped'):
                 await self._start_idle_timer(player)
         except Exception:
             pass

@@ -11,6 +11,7 @@ import time
 from collections import deque
 from functools import lru_cache
 import threading
+import aiofiles
 
 class SimpleCache:
     """Simple thread-safe cache with TTL."""
@@ -33,9 +34,11 @@ class SimpleCache:
             self._cache[key] = (value, time.time() + ttl_seconds)
 
 class GroqChat(commands.Cog):
-    __slots__ = ('bot', 'groq_client', 'model', 'cleanup_task', '_bot_id', '_bot_mentions', '_think_pattern', 'system_prompt',
+    __slots__ = ('bot', 'groq_client', 'groq_api_key', 'model', 'cleanup_task', 'rate_limit_cleanup_task', 
+                 'queue_processors', '_bot_id', '_bot_mentions', '_think_pattern', 'system_prompt',
                  'user_rate_limits', 'guild_rate_limits', 'request_queue', 'global_request_times', 'last_request_time',
-                 'consecutive_rate_limits', 'adaptive_delay', 'last_successful_request', 'context_manager', '_cache')
+                 'consecutive_rate_limits', 'adaptive_delay', 'last_successful_request', 'context_manager', '_cache',
+                 'active_requests', 'max_concurrent_requests', 'min_request_interval')
 
     def __init__(self, bot):
         self.bot = bot
@@ -50,15 +53,14 @@ class GroqChat(commands.Cog):
             )
         self.model = "openai/gpt-oss-120b"
 
-        # Load system prompt with fallback
-        self.system_prompt = self._load_system_prompt()
+        self.system_prompt = None
 
         self._bot_id = "1128674354696310824"
         self._bot_mentions = (f"<@{self._bot_id}>", f"<@!{self._bot_id}>")
         self._think_pattern = re.compile(r'<think>.*?</think>', re.DOTALL)
 
-        self.user_rate_limits: Dict[int, deque] = {}
-        self.guild_rate_limits: Dict[int, deque] = {}
+        self.user_rate_limits: Dict[int, Tuple[deque, float]] = {}
+        self.guild_rate_limits: Dict[int, Tuple[deque, float]] = {}
 
         self.global_request_times: deque = deque(maxlen=100)
         self.last_request_time = 0
@@ -67,18 +69,24 @@ class GroqChat(commands.Cog):
         self.consecutive_rate_limits = 0
         self.adaptive_delay = 5.0
 
-        self.request_queue: asyncio.PriorityQueue = asyncio.PriorityQueue()
+        self.request_queue: asyncio.Queue = asyncio.Queue()
+        self.active_requests = 0
+        self.max_concurrent_requests = 3
+        self.min_request_interval = 0.5
 
         self.context_manager = None
-        self._cache = SimpleCache()  # Cache for stats to reduce file I/O
+        self._cache = SimpleCache()
 
-        self.cleanup_task = asyncio.create_task(self.process_request_queue())
+        self.cleanup_task = asyncio.create_task(self._start_queue_processors())
+        self.rate_limit_cleanup_task = asyncio.create_task(self._cleanup_rate_limits())
+        self.queue_processors = []
 
-    def _load_system_prompt(self) -> str:
+    async def _load_system_prompt(self) -> str:
         """Load system prompt from file with fallback."""
         try:
-            with open("jackybot_system_prompt.md", "r", encoding="utf-8") as f:
-                return f.read().strip()
+            async with aiofiles.open("jackybot_system_prompt.md", "r", encoding="utf-8") as f:
+                content = await f.read()
+                return content.strip()
         except FileNotFoundError:
             print("WARNING: jackybot_system_prompt.md not found. Using default system prompt.")
         except Exception as e:
@@ -89,35 +97,36 @@ class GroqChat(commands.Cog):
     def cog_unload(self):
         """Clean up the background tasks when the cog is unloaded."""
         self.cleanup_task.cancel()
+        self.rate_limit_cleanup_task.cancel()
+        for processor in self.queue_processors:
+            processor.cancel()
 
     async def cog_load(self):
-        """Initialize reference to ContextManager cog after both are loaded."""
+        """Initialize async resources after cog is loaded."""
+        self.system_prompt = await self._load_system_prompt()
         await asyncio.sleep(0.1)
         self.context_manager = self.bot.get_cog("ContextManager")
     
-    def _check_rate_limit(self, rate_limits_dict: Dict[int, deque], entity_id: int, max_requests: int = 3, window_seconds: int = 60) -> Tuple[bool, int]:
+    def _check_rate_limit(self, rate_limits_dict: Dict[int, Tuple[deque, float]], entity_id: int, max_requests: int = 3, window_seconds: int = 60) -> Tuple[bool, int]:
         """
-        Generic rate limit checker for users or guilds.
+        Generic rate limit checker for users or guilds with automatic cleanup.
         Returns (is_allowed, seconds_until_reset)
         """
         now = time.time()
 
-        # Initialize request history if not exists
         if entity_id not in rate_limits_dict:
-            rate_limits_dict[entity_id] = deque()
+            rate_limits_dict[entity_id] = (deque(), now)
 
-        requests = rate_limits_dict[entity_id]
+        requests, _ = rate_limits_dict[entity_id]
+        rate_limits_dict[entity_id] = (requests, now)
 
-        # Remove requests older than the window
         while requests and requests[0] < now - window_seconds:
             requests.popleft()
 
-        # Check if under limit
         if len(requests) < max_requests:
             requests.append(now)
             return True, 0
 
-        # Calculate seconds until oldest request expires
         seconds_until_reset = int(window_seconds - (now - requests[0])) + 1
         return False, seconds_until_reset
 
@@ -129,35 +138,77 @@ class GroqChat(commands.Cog):
         """Check if a guild has exceeded its rate limit."""
         return self._check_rate_limit(self.guild_rate_limits, guild_id, max_requests, window_seconds)
     
-    async def process_request_queue(self):
-        """Background task to process queued API requests with basic rate limiting."""
+    async def _cleanup_rate_limits(self):
+        """Periodically clean up old rate limit entries to prevent memory leaks."""
         while True:
             try:
-                # Get next request from queue
-                priority, timestamp, message, messages, future = await self.request_queue.get()
+                await asyncio.sleep(300)
+                now = time.time()
+                cleanup_threshold = 3600
 
-                # Basic rate limiting: minimum 2 second delay between requests
+                expired_users = [
+                    user_id for user_id, (requests, last_access) in self.user_rate_limits.items()
+                    if now - last_access > cleanup_threshold
+                ]
+                for user_id in expired_users:
+                    del self.user_rate_limits[user_id]
+
+                expired_guilds = [
+                    guild_id for guild_id, (requests, last_access) in self.guild_rate_limits.items()
+                    if now - last_access > cleanup_threshold
+                ]
+                for guild_id in expired_guilds:
+                    del self.guild_rate_limits[guild_id]
+
+                if expired_users or expired_guilds:
+                    print(f"Rate limit cleanup: Removed {len(expired_users)} users, {len(expired_guilds)} guilds")
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"Error in rate limit cleanup: {e}")
+    
+    async def _start_queue_processors(self):
+        """Start multiple concurrent queue processors."""
+        self.queue_processors = [
+            asyncio.create_task(self.process_request_queue(worker_id=i))
+            for i in range(self.max_concurrent_requests)
+        ]
+        await asyncio.gather(*self.queue_processors, return_exceptions=True)
+    
+    async def process_request_queue(self, worker_id: int = 0):
+        """Background task to process queued API requests with adaptive rate limiting."""
+        while True:
+            try:
+                message, messages, future = await self.request_queue.get()
+
                 now = time.time()
                 time_since_last = now - self.last_request_time
 
-                if time_since_last < 2.0:
-                    await asyncio.sleep(2.0 - time_since_last)
+                delay = self.min_request_interval if self.consecutive_rate_limits == 0 else 2.0
+
+                if time_since_last < delay:
+                    await asyncio.sleep(delay - time_since_last)
 
                 try:
-                    # Make the API call with retry logic
+                    self.active_requests += 1
                     response = await self._groq_request_with_retry(messages)
                     self.last_request_time = time.time()
+                    self.consecutive_rate_limits = 0
                     future.set_result(response)
                 except Exception as e:
+                    if "429" in str(e) or "Rate limit" in str(e):
+                        self.consecutive_rate_limits += 1
                     future.set_exception(e)
+                finally:
+                    self.active_requests -= 1
 
-                # Mark task as done
                 self.request_queue.task_done()
 
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                print(f"Error in queue processor: {e}")
+                print(f"Error in queue processor {worker_id}: {e}")
                 await asyncio.sleep(1)
     
     async def _groq_request_with_retry(self, messages: List[Dict], max_retries: int = 3) -> str:
@@ -443,22 +494,18 @@ class GroqChat(commands.Cog):
         """Process AI request through the queue system."""
         async with message.channel.typing():
             try:
-                # Get conversation context
                 conversation_messages = await self.get_conversation_messages(guild_id, prompt, message)
 
-                # Queue the request
                 future = asyncio.Future()
-                await self.request_queue.put((time.time(), time.time(), message, conversation_messages, future))
+                await self.request_queue.put((message, conversation_messages, future))
 
-                # Show queue status if busy
-                if self.request_queue.qsize() > 3:
-                    await message.channel.send(f"⏳ Your request is queued (position: {self.request_queue.qsize()}).")
+                queue_size = self.request_queue.qsize()
+                if queue_size > 5:
+                    await message.channel.send(f"⏳ Queue is busy ({queue_size} requests, ~{queue_size * 2}s wait).")
 
-                # Wait for response
                 response = await asyncio.wait_for(future, timeout=120.0)
                 formatted_response = self.format_response(response)
 
-                # Update context
                 self.context_manager.add_message_to_context(guild_id, "user", prompt)
                 self.context_manager.add_message_to_context(guild_id, "assistant", formatted_response)
 
@@ -489,10 +536,10 @@ class GroqChat(commands.Cog):
             return ""
         return f"SERVER: {guild.name}, {guild.member_count} members"
 
-    def _get_bot_stats(self) -> str:
+    async def _get_bot_stats(self) -> str:
         """Get compact bot statistics for context."""
         try:
-            command_stats = self.load_json_file("data/command_stats.json")
+            command_stats = await self.load_json_file("data/command_stats.json")
             total_servers = len(self.bot.guilds)
             total_users = sum(guild.member_count for guild in self.bot.guilds)
             return f"STATS: {total_servers} servers, {total_users} users, {sum(command_stats.values())} commands used"
@@ -553,7 +600,7 @@ class GroqChat(commands.Cog):
         """Get emotional support resources for context."""
         return "SUPPORT: Text 'HOME' to 741741 or call 988"
 
-    def load_json_file(self, filename: str) -> Dict:
+    async def load_json_file(self, filename: str) -> Dict:
         """Helper method to load JSON files safely with caching."""
         cache_key = f"json_{filename}"
         cached_data = self._cache.get(cache_key)
@@ -562,12 +609,13 @@ class GroqChat(commands.Cog):
 
         try:
             if os.path.exists(filename):
-                with open(filename, 'r') as f:
-                    data = json.load(f)
-                    self._cache.set(cache_key, data, ttl_seconds=300)  # Cache for 5 minutes
+                async with aiofiles.open(filename, 'r') as f:
+                    content = await f.read()
+                    data = json.loads(content)
+                    self._cache.set(cache_key, data, ttl_seconds=300)
                     return data
-        except:
-            pass
+        except Exception as e:
+            print(f"Error loading JSON file {filename}: {e}")
         return {}
 
     def get_all_bot_commands(self) -> Dict:
@@ -621,13 +669,14 @@ class GroqChat(commands.Cog):
         user_message = message.content.lower()
         info_parts = []
 
-        # Context-aware information gathering - only fetch what's relevant
         if any(word in user_message for word in ["server", "guild", "member"]):
             if message.guild:
                 info_parts.append(self._get_server_info(message.guild))
 
         if any(word in user_message for word in ["stats", "statistic", "uptime", "usage"]):
-            info_parts.append(self._get_bot_stats())
+            stats_info = await self._get_bot_stats()
+            if stats_info:
+                info_parts.append(stats_info)
 
         if any(word in user_message for word in ["free", "game", "epic"]):
             games_info = await self._get_free_games()
@@ -647,7 +696,6 @@ class GroqChat(commands.Cog):
         if any(word in user_message for word in ["sad", "depress", "suicide", "crisis", "mental", "anxiety"]):
             info_parts.append(self._get_emotional_support())
 
-        # Return compiled context or minimal fallback
         return "\n".join(filter(None, info_parts)) or "You are JackyBot. Use !help for commands."
 
 async def setup(bot):
