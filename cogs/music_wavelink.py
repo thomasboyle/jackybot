@@ -19,11 +19,32 @@ LYRICS_NEWLINES_REGEX = re.compile(r'\n{3,}')
 class MusicWavelinkCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10))
+        self.session = None
         self.bot.loop.create_task(self.connect_nodes())
 
     async def connect_nodes(self):
         await self.bot.wait_until_ready()
+        
+        connector = aiohttp.TCPConnector(
+            limit=100,
+            limit_per_host=10,
+            ttl_dns_cache=300,
+            enable_cleanup_closed=True,
+            force_close=False
+        )
+        
+        timeout = aiohttp.ClientTimeout(
+            total=10,
+            connect=3,
+            sock_read=5
+        )
+        
+        self.session = aiohttp.ClientSession(
+            connector=connector,
+            timeout=timeout,
+            headers={'User-Agent': 'JackyBot-MusicPlayer/1.0'}
+        )
+        
         host = os.getenv('LAVALINK_HOST', '127.0.0.1')
         port = int(os.getenv('LAVALINK_PORT', '2333'))
         password = os.getenv('LAVALINK_PASSWORD', 'youshallnotpass')
@@ -55,7 +76,8 @@ class MusicWavelinkCog(commands.Cog):
                 pass
 
     async def cog_unload(self):
-        await self.session.close()
+        if self.session:
+            await self.session.close()
 
 
     @commands.Cog.listener()
@@ -216,22 +238,41 @@ class MusicWavelinkCog(commands.Cog):
 
     async def _start_periodic_updates(self, player: wavelink.Player):
         await self._stop_periodic_updates(player)
+        
+        UPDATE_INTERVAL = 30
+        MAX_CONSECUTIVE_ERRORS = 3
+        
         async def periodic_update():
+            error_count = 0
             try:
                 while player.connected and player.current and hasattr(player, 'current_message'):
-                    await asyncio.sleep(10)
+                    await asyncio.sleep(UPDATE_INTERVAL)
+                    
                     if not player.connected or not player.current or not hasattr(player, 'current_message'):
                         break
-                    try:
-                        embed = self._create_now_playing_embed(player.current, player, show_progress=True)
-                        view = self._create_controls(player)
-                        await player.current_message.edit(embed=embed, view=view)
-                    except Exception:
-                        break
+                    
+                    if not getattr(player, 'paused', False):
+                        try:
+                            embed = self._create_now_playing_embed(player.current, player, show_progress=True)
+                            view = self._create_controls(player)
+                            await player.current_message.edit(embed=embed, view=view)
+                            error_count = 0
+                        except discord.NotFound:
+                            break
+                        except discord.HTTPException as e:
+                            error_count += 1
+                            if error_count >= MAX_CONSECUTIVE_ERRORS:
+                                break
+                            if e.status == 429:
+                                await asyncio.sleep(60)
             except asyncio.CancelledError:
                 pass
             except Exception:
                 pass
+            finally:
+                if hasattr(player, 'update_task'):
+                    delattr(player, 'update_task')
+        
         player.update_task = asyncio.create_task(periodic_update())
 
     async def _stop_periodic_updates(self, player: wavelink.Player):
@@ -313,13 +354,17 @@ class MusicWavelinkCog(commands.Cog):
         return player
 
     def _remove_from_queue(self, player: wavelink.Player, index: int) -> wavelink.Playable:
-        queue_list = list(player.queue)
-        if index < 1 or index > len(queue_list):
+        if index < 1 or index > player.queue.count:
             raise ValueError("Invalid index")
-        removed_track = queue_list.pop(index - 1)
+        
+        queue_list = list(player.queue)
+        removed_track = queue_list[index - 1]
+        
         player.queue.clear()
-        for track in queue_list:
-            player.queue.put(track)
+        for i, track in enumerate(queue_list):
+            if i != index - 1:
+                player.queue.put(track)
+        
         return removed_track
 
     @commands.command()
@@ -401,6 +446,8 @@ class MusicWavelinkCog(commands.Cog):
     async def get_lyrics(self, interaction: discord.Interaction, player: wavelink.Player):
         if not player.current:
             return await interaction.response.send_message("No song is currently playing.", ephemeral=True)
+        if not self.session:
+            return await interaction.response.send_message("Bot is still initializing. Please try again in a moment.", ephemeral=True)
         await interaction.response.defer(ephemeral=True)
         artist, title = self._extract_artist_title(player.current)
         
