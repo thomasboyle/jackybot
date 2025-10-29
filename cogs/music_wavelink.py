@@ -180,17 +180,24 @@ class MusicWavelinkCog(commands.Cog):
         # Try to get artist from track attributes first
         artist = getattr(track, 'author', None) or getattr(track, 'artist', None)
 
+        # Ensure track.title is a string
+        track_title = track.title
+        if not track_title:
+            track_title = "Unknown Title"
+        track_title = str(track_title)
+
         if not artist:
             # Fallback to parsing the title for artist/title separation
-            artist, title = self._parse_artist_title(track.title)
+            artist, title = self._parse_artist_title(track_title)
         else:
-            title = track.title
+            title = track_title
+            artist = str(artist)
 
         # Clean up artist/title if needed
         if not artist or artist in ["", "Various Artists", "Unknown Artist"]:
             artist = "Unknown Artist"
         if not title:
-            title = track.title
+            title = track_title
 
         # Main description: Artist and title with labels, reduced gap
         embed.description = f"**Artist:** {artist}\n**Title:** {title}"
@@ -534,7 +541,8 @@ class MusicWavelinkCog(commands.Cog):
             if player.playing:
                 player.queue.put(track)
                 position = player.queue.count + 1
-                await ctx.reply(f"Queued #{position}: {track.title}")
+                track_title = track.title or "Unknown Title"
+                await ctx.reply(f"Queued #{position}: {track_title}")
             else:
                 player.last_requester = ctx.author
                 await player.play(track)
@@ -636,12 +644,18 @@ class MusicWavelinkCog(commands.Cog):
         artist = getattr(player.current, 'author', None) or getattr(player.current, 'artist', None)
         track_title = player.current.title
 
+        # Ensure track_title is a string
+        if not track_title:
+            track_title = "Unknown Title"
+        track_title = str(track_title)
+
         if not artist:
             # Fallback to parsing the title for artist/title separation
             artist, parsed_title = self._parse_artist_title(track_title)
             title = parsed_title
         else:
             title = track_title
+            artist = str(artist)
 
         # Clean up artist/title if needed (same as embed)
         if not artist or artist in ["", "Various Artists", "Unknown Artist"]:
@@ -672,12 +686,18 @@ class MusicWavelinkCog(commands.Cog):
         artist = getattr(player.current, 'author', None) or getattr(player.current, 'artist', None)
         track_title = player.current.title
 
+        # Ensure track_title is a string
+        if not track_title:
+            track_title = "Unknown Title"
+        track_title = str(track_title)
+
         if not artist:
             # Fallback to parsing the title for artist/title separation
             artist, parsed_title = self._parse_artist_title(track_title)
             title = parsed_title
         else:
             title = track_title
+            artist = str(artist)
 
         # Clean up artist/title if needed (same as embed)
         if not artist or artist in ["", "Various Artists", "Unknown Artist"]:
@@ -770,12 +790,18 @@ class MusicWavelinkCog(commands.Cog):
         artist = getattr(player.current, 'author', None) or getattr(player.current, 'artist', None)
         track_title = player.current.title
 
+        # Ensure track_title is a string
+        if not track_title:
+            track_title = "Unknown Title"
+        track_title = str(track_title)
+
         if not artist:
             # Fallback to parsing the title for artist/title separation
             artist, parsed_title = self._parse_artist_title(track_title)
             title = parsed_title
         else:
             title = track_title
+            artist = str(artist)
 
         # Clean up artist/title if needed (same as embed)
         if not artist or artist in ["", "Various Artists", "Unknown Artist"]:
@@ -816,16 +842,23 @@ class MusicWavelinkCog(commands.Cog):
         
         for idx, track in enumerate(queue_list[:tracks_per_page], start=1):
             artist = getattr(track, 'author', None) or getattr(track, 'artist', None)
-            
+
+            # Ensure track.title is a string
+            track_title = track.title
+            if not track_title:
+                track_title = "Unknown Title"
+            track_title = str(track_title)
+
             if not artist:
-                artist, title = self._parse_artist_title(track.title)
+                artist, title = self._parse_artist_title(track_title)
             else:
-                title = track.title
-            
+                title = track_title
+                artist = str(artist)
+
             if not artist or artist in ["", "Various Artists", "Unknown Artist"]:
                 artist = "Unknown Artist"
             if not title:
-                title = track.title
+                title = track_title
             
             duration_ms = getattr(track, 'duration', None) or getattr(track, 'length', None)
             duration_str = self._format_duration(duration_ms) if duration_ms else "?"
