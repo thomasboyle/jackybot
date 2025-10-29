@@ -72,6 +72,31 @@ class MusicWavelinkCog(commands.Cog):
             logger.error(f"Failed to connect to Lavalink: {e}")
             raise
 
+    async def _start_idle_timer(self, player: wavelink.Player):
+        """Start idle disconnect timer"""
+        # Cancel any existing timer
+        await self._cancel_idle_timer(player)
+
+        async def idle_disconnect():
+            try:
+                await asyncio.sleep(30)  # Wait 30 seconds
+                if player.connected and not player.playing and player.queue.is_empty:
+                    await player.disconnect()
+                    logger.info("Bot disconnected due to idle timeout")
+            except Exception as e:
+                logger.error(f"Idle disconnect failed: {e}")
+
+        player.idle_timer = asyncio.create_task(idle_disconnect())
+
+    async def _cancel_idle_timer(self, player: wavelink.Player):
+        """Cancel idle disconnect timer if it exists"""
+        if hasattr(player, 'idle_timer') and not player.idle_timer.done():
+            player.idle_timer.cancel()
+            try:
+                await player.idle_timer
+            except asyncio.CancelledError:
+                pass
+
     async def cog_unload(self):
         """Cleanup resources on cog unload"""
         await self.session.close()
@@ -88,6 +113,9 @@ class MusicWavelinkCog(commands.Cog):
         try:
             player = payload.player
             track = payload.track
+
+            # Cancel idle timer since we're starting playback
+            await self._cancel_idle_timer(player)
 
             # Store track start time for elapsed tracking
             player.track_start_time = time.time()
@@ -126,8 +154,8 @@ class MusicWavelinkCog(commands.Cog):
                 next_track = player.queue.get()
                 await player.play(next_track)
             elif player.queue.is_empty and payload.reason == 'finished':
-                # Auto-disconnect when queue is empty
-                await player.disconnect()
+                # Start idle timer instead of immediate disconnect
+                await self._start_idle_timer(player)
         except Exception as e:
             logger.error(f"Error in on_wavelink_track_end: {e}", exc_info=True)
 
@@ -371,6 +399,9 @@ class MusicWavelinkCog(commands.Cog):
         except commands.CommandError as e:
             return await ctx.send(str(e))
 
+        # Cancel idle timer since we're adding tracks
+        await self._cancel_idle_timer(player)
+
         # Process search query with YouTube prefix
         search_query = self._get_search_query(search)
 
@@ -474,6 +505,8 @@ class MusicWavelinkCog(commands.Cog):
 
         if player.paused:
             await player.resume()
+            # Cancel idle timer since we're resuming playback
+            await self._cancel_idle_timer(player)
             await ctx.send("Resumed playback.")
         else:
             await player.pause()
@@ -506,6 +539,8 @@ class MusicWavelinkCog(commands.Cog):
 
         player.queue.clear()
         await player.stop()
+        # Start idle timer since playback stopped
+        await self._start_idle_timer(player)
         await ctx.send("Stopped playback and cleared queue.")
 
     @commands.command()
@@ -530,6 +565,8 @@ class MusicWavelinkCog(commands.Cog):
         except commands.CommandError as e:
             return await ctx.send(str(e))
 
+        # Cancel idle timer since we're manually disconnecting
+        await self._cancel_idle_timer(player)
         await player.disconnect()
         await ctx.send("Disconnected from voice channel.")
 
