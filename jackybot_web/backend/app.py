@@ -4,6 +4,7 @@ from flask_socketio import SocketIO, emit
 import requests
 from urllib.parse import urlencode
 import secrets
+import os
 from config import Config
 from cog_manager import CogManager
 
@@ -11,7 +12,7 @@ app = Flask(__name__)
 app.config.from_object(Config)
 CORS(app, origins=Config.CORS_ORIGINS, supports_credentials=True)
 
-socketio = SocketIO(app, cors_allowed_origins=Config.CORS_ORIGINS, async_mode='eventlet')
+socketio = SocketIO(app, cors_allowed_origins=Config.CORS_ORIGINS, async_mode='threading')
 
 cog_manager = CogManager(Config.COG_SETTINGS_PATH, Config.COG_METADATA_PATH)
 
