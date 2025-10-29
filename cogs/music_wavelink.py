@@ -163,11 +163,11 @@ class MusicWavelinkCog(commands.Cog):
         """Create now playing embed with optional progress tracking"""
         embed = discord.Embed(title="🎵 Now Playing", color=0x00FF00)
 
-        # Parse artist and title
-        artist, title = self._parse_artist_title(track.title)
+        # Try to get artist from track attributes first
+        artist = getattr(track, 'author', None) or getattr(track, 'artist', None)
 
-        # Track info - show artist and title separately if artist is available
-        if artist and artist not in ["", "Various Artists", "Unknown Artist"]:
+        if artist:
+            # Use the artist from track attributes and show title as is
             embed.add_field(
                 name="Artist",
                 value=artist,
@@ -175,16 +175,31 @@ class MusicWavelinkCog(commands.Cog):
             )
             embed.add_field(
                 name="Title",
-                value=f"[{title}]({getattr(track, 'uri', 'Unknown URI')})",
-                inline=True
-            )
-        else:
-            # Fallback to full title if no artist found
-            embed.add_field(
-                name="Title",
                 value=f"[{track.title}]({getattr(track, 'uri', 'Unknown URI')})",
                 inline=False
             )
+        else:
+            # Fallback to parsing the title for artist/title separation
+            parsed_artist, parsed_title = self._parse_artist_title(track.title)
+
+            if parsed_artist and parsed_artist not in ["", "Various Artists", "Unknown Artist"]:
+                embed.add_field(
+                    name="Artist",
+                    value=parsed_artist,
+                    inline=True
+                )
+                embed.add_field(
+                    name="Title",
+                    value=f"[{parsed_title}]({getattr(track, 'uri', 'Unknown URI')})",
+                    inline=True
+                )
+            else:
+                # Fallback to full title if no artist found
+                embed.add_field(
+                    name="Title",
+                    value=f"[{track.title}]({getattr(track, 'uri', 'Unknown URI')})",
+                    inline=False
+                )
 
         # Duration - handle different possible attribute names
         duration_ms = getattr(track, 'duration', None) or getattr(track, 'length', None) or getattr(track, 'duration_ms', None)
