@@ -215,9 +215,6 @@ class MusicWavelinkCog(commands.Cog):
         loop_status = "On" if loop_mode else "Off"
         embed.add_field(name="🔁 Loop", value=loop_status, inline=True)
 
-        # Queue field
-        queue_count = len(player.queue) if hasattr(player, 'queue') else 0
-        embed.add_field(name="📋 Queue", value=f"{queue_count} songs in queue", inline=True)
 
         # Progress bar field
         if show_progress and duration_ms and duration_ms > 0:
@@ -301,32 +298,7 @@ class MusicWavelinkCog(commands.Cog):
                     await self.get_youtube_link(interaction, player)
 
                 elif action == 'queue':
-                    await interaction.response.defer(ephemeral=True)
-                    # Show queue embed - use same logic as the queue command
-                    try:
-                        if not player.queue or len(player.queue) == 0:
-                            embed = discord.Embed(title="🎶 Queue", description="Queue is empty", color=0x0000FF)
-                        else:
-                            embed = discord.Embed(title="🎶 Queue", color=0x0000FF)
-                            # Show up to 10 tracks
-                            queue_list = list(player.queue)
-                            for i, track in enumerate(queue_list[:10], 1):
-                                duration_str = self._format_duration(track.duration) if track.duration else "..."
-                                embed.add_field(
-                                    name=f"{i}. {track.title}",
-                                    value=duration_str,
-                                    inline=False
-                                )
-                            if len(queue_list) > 10:
-                                embed.add_field(
-                                    name=f"... and {len(queue_list) - 10} more",
-                                    value="",
-                                    inline=False
-                                )
-                    except Exception as e:
-                        logger.error(f"Queue button error: {e}")
-                        embed = discord.Embed(title="🎶 Queue", description="Error retrieving queue information", color=0xFF0000)
-                    await interaction.followup.send(embed=embed, ephemeral=True)
+                    await self.show_queue(interaction, player)
 
             except Exception as e:
                 logger.error(f"Control action {action} failed: {e}")
@@ -569,88 +541,6 @@ class MusicWavelinkCog(commands.Cog):
                 # Send now playing embed as reply to the play command
                 await self._send_now_playing(ctx, player)
 
-    @commands.command()
-    async def queue(self, ctx: commands.Context):
-        """Display current queue"""
-        try:
-            player = self._get_player(ctx)
-        except commands.CommandError as e:
-            return await ctx.reply(str(e))
-
-        if not player.queue or len(player.queue) == 0:
-            return await ctx.reply("Queue is empty")
-
-        embed = discord.Embed(title="🎶 Queue", color=0x0000FF)
-
-        # Show up to 10 tracks
-        queue_list = list(player.queue)
-        for i, track in enumerate(queue_list[:10], 1):
-            duration_str = self._format_duration(track.duration) if track.duration else "..."
-            embed.add_field(
-                name=f"{i}. {track.title}",
-                value=duration_str,
-                inline=False
-            )
-
-        if len(queue_list) > 10:
-            embed.add_field(
-                name=f"... and {len(queue_list) - 10} more",
-                value="",
-                inline=False
-            )
-
-        await ctx.reply(embed=embed)
-
-    @commands.command(aliases=["nowplaying"])
-    async def np(self, ctx: commands.Context):
-        """Show currently playing track with progress"""
-        try:
-            player = self._get_player(ctx)
-
-            if not player.current:
-                return await ctx.send("Nothing playing")
-
-            await self._send_now_playing(ctx, player)
-        except commands.CommandError as e:
-            return await ctx.send(str(e))
-        except Exception as e:
-            await ctx.send(f"Now playing failed: {e}")
-
-    @commands.command()
-    async def ytplay(self, ctx: commands.Context, *, search: str):
-        """Play music specifically from YouTube"""
-        if not search.startswith(('http://', 'https://')):
-            search = f'ytsearch:{search}'
-
-        await self.play(ctx, search=search)
-
-    @commands.command()
-    async def ytmusic(self, ctx: commands.Context, *, search: str):
-        """Play music from YouTube Music"""
-        if not search.startswith(('http://', 'https://')):
-            search = f'ytmsearch:{search}'
-
-        await self.play(ctx, search=search)
-
-    @commands.command()
-    async def pause(self, ctx: commands.Context):
-        """Pause or resume the current track"""
-        try:
-            player = self._get_player(ctx)
-            player.text_channel = ctx.channel
-        except commands.CommandError as e:
-            return await ctx.send(str(e))
-
-        if player.paused:
-            await player.resume()
-            # Cancel idle timer since we're resuming playback
-            await self._cancel_idle_timer(player)
-            await ctx.send("Resumed playback.")
-        else:
-            await player.pause()
-            await ctx.send("Paused playback.")
-
-        await self._update_embed(player)
 
     @commands.command()
     async def skip(self, ctx: commands.Context):
@@ -666,119 +556,6 @@ class MusicWavelinkCog(commands.Cog):
 
         await player.skip(force=True)
         await ctx.send(f"{ctx.author.name} skipped")
-
-    @commands.command(name='stopmusic', aliases=['musicstop'])
-    async def stop_music(self, ctx: commands.Context):
-        """Stop playback and clear the queue"""
-        try:
-            player = self._get_player(ctx)
-        except commands.CommandError as e:
-            return await ctx.send(str(e))
-
-        # Stop periodic updates
-        await self._stop_periodic_updates(player)
-        player.queue.clear()
-        await player.stop()
-        # Start idle timer since playback stopped
-        await self._start_idle_timer(player)
-        await ctx.send("Stopped playback and cleared queue.")
-
-    @commands.command()
-    async def volume(self, ctx: commands.Context, level: int):
-        """Set playback volume (0-100)"""
-        try:
-            player = self._get_player(ctx)
-        except commands.CommandError as e:
-            return await ctx.send(str(e))
-
-        if not 0 <= level <= 100:
-            return await ctx.send("Volume must be between 0 and 100.")
-
-        await player.set_volume(level)
-        await ctx.send(f"Volume set to {level}%.")
-
-    @commands.command()
-    async def disconnect(self, ctx: commands.Context):
-        """Disconnect the bot from voice"""
-        try:
-            player = self._get_player(ctx)
-        except commands.CommandError as e:
-            return await ctx.send(str(e))
-
-        # Stop periodic updates and cancel idle timer since we're manually disconnecting
-        await self._stop_periodic_updates(player)
-        await self._cancel_idle_timer(player)
-        await player.disconnect()
-        await ctx.send("Disconnected from voice channel.")
-
-    @commands.command()
-    async def loop(self, ctx: commands.Context):
-        """Toggle loop mode for current track"""
-        try:
-            player = self._get_player(ctx)
-        except commands.CommandError as e:
-            return await ctx.send(str(e))
-
-        loop_mode = getattr(player, 'loop_mode', False)
-        player.loop_mode = not loop_mode
-        status = 'enabled' if player.loop_mode else 'disabled'
-        await ctx.send(f"Loop {status}.")
-
-    @commands.command()
-    async def clear(self, ctx: commands.Context):
-        """Clear the queue"""
-        try:
-            player = self._get_player(ctx)
-        except commands.CommandError as e:
-            return await ctx.send(str(e))
-
-        player.queue.clear()
-        await ctx.send("Queue cleared.")
-
-    @commands.command()
-    async def shuffle(self, ctx: commands.Context):
-        """Shuffle the queue"""
-        try:
-            player = self._get_player(ctx)
-        except commands.CommandError as e:
-            return await ctx.send(str(e))
-
-        if len(player.queue) == 0:
-            return await ctx.send("Queue is empty.")
-
-        player.queue.shuffle()
-        await ctx.send("Queue shuffled.")
-
-    @commands.command()
-    async def remove(self, ctx: commands.Context, index: int):
-        """Remove a track from the queue by position"""
-        try:
-            player = self._get_player(ctx)
-        except commands.CommandError as e:
-            return await ctx.send(str(e))
-
-        if len(player.queue) == 0:
-            return await ctx.send("Queue is empty.")
-
-        try:
-            removed_track = self._remove_from_queue(player, index)
-            await ctx.send(f"Removed: {removed_track.title}")
-        except ValueError:
-            await ctx.send(f"Invalid position. Queue has {player.queue.count} tracks.")
-
-    @commands.command()
-    async def seek(self, ctx: commands.Context, seconds: int):
-        """Seek forward or backward by specified seconds"""
-        try:
-            player = self._get_player(ctx)
-        except commands.CommandError as e:
-            return await ctx.send(str(e))
-
-        if not player.current:
-            return await ctx.send("Nothing is playing to seek.")
-
-        await self.seek_player(player, seconds)
-        await ctx.send(f"Seeked {seconds:+d} seconds")
 
 
     def _parse_artist_title(self, title: str) -> tuple[str, str]:
@@ -1006,6 +783,52 @@ class MusicWavelinkCog(commands.Cog):
         spotify_url = f"https://open.spotify.com/search/{encoded_query}"
 
         await interaction.followup.send(f"🔍 **Spotify Search:** {spotify_url}", ephemeral=True)
+
+    async def show_queue(self, interaction: discord.Interaction, player: wavelink.Player):
+        """Display the current queue"""
+        await interaction.response.defer(ephemeral=True)
+        
+        if len(player.queue) == 0:
+            return await interaction.followup.send("📋 **Queue is empty**", ephemeral=True)
+        
+        embed = discord.Embed(
+            title="📋 Queue",
+            color=0x5865F2,
+            timestamp=discord.utils.utcnow()
+        )
+        
+        queue_list = list(player.queue)
+        total_tracks = len(queue_list)
+        
+        tracks_per_page = 10
+        queue_text = []
+        
+        for idx, track in enumerate(queue_list[:tracks_per_page], start=1):
+            artist = getattr(track, 'author', None) or getattr(track, 'artist', None)
+            
+            if not artist:
+                artist, title = self._parse_artist_title(track.title)
+            else:
+                title = track.title
+            
+            if not artist or artist in ["", "Various Artists", "Unknown Artist"]:
+                artist = "Unknown Artist"
+            if not title:
+                title = track.title
+            
+            duration_ms = getattr(track, 'duration', None) or getattr(track, 'length', None)
+            duration_str = self._format_duration(duration_ms) if duration_ms else "?"
+            
+            queue_text.append(f"**{idx}.** {artist} - {title} `[{duration_str}]`")
+        
+        embed.description = "\n".join(queue_text)
+        
+        if total_tracks > tracks_per_page:
+            embed.set_footer(text=f"Showing 10 of {total_tracks} tracks")
+        else:
+            embed.set_footer(text=f"{total_tracks} track{'s' if total_tracks != 1 else ''} in queue")
+        
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(MusicWavelinkCog(bot))
