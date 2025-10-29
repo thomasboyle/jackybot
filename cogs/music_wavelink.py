@@ -163,12 +163,28 @@ class MusicWavelinkCog(commands.Cog):
         """Create now playing embed with optional progress tracking"""
         embed = discord.Embed(title="🎵 Now Playing", color=0x00FF00)
 
-        # Track info
-        embed.add_field(
-            name="Title",
-            value=f"[{track.title}]({getattr(track, 'uri', 'Unknown URI')})",
-            inline=False
-        )
+        # Parse artist and title
+        artist, title = self._parse_artist_title(track.title)
+
+        # Track info - show artist and title separately if artist is available
+        if artist and artist not in ["", "Various Artists", "Unknown Artist"]:
+            embed.add_field(
+                name="Artist",
+                value=artist,
+                inline=True
+            )
+            embed.add_field(
+                name="Title",
+                value=f"[{title}]({getattr(track, 'uri', 'Unknown URI')})",
+                inline=True
+            )
+        else:
+            # Fallback to full title if no artist found
+            embed.add_field(
+                name="Title",
+                value=f"[{track.title}]({getattr(track, 'uri', 'Unknown URI')})",
+                inline=False
+            )
 
         # Duration - handle different possible attribute names
         duration_ms = getattr(track, 'duration', None) or getattr(track, 'length', None) or getattr(track, 'duration_ms', None)
@@ -777,27 +793,31 @@ class MusicWavelinkCog(commands.Cog):
         # Parse artist and title
         artist, title = self._parse_artist_title(track_title)
 
-        # Create search query
-        if artist:
+        # Create comprehensive search query that includes both artist and title
+        if artist and artist not in ["", "Various Artists", "Unknown Artist"]:
+            # Include both artist and title for best search results
             search_query = f"{artist} {title}"
         else:
-            search_query = title
+            # Fallback to full title if artist parsing failed
+            search_query = track_title
+
+        # Clean up the search query for better results
+        search_query = search_query.strip()
 
         # URL encode the search query
         from urllib.parse import quote
         encoded_query = quote(search_query)
 
-        # Create Spotify links (both web and app)
-        spotify_web_url = f"https://open.spotify.com/search/{encoded_query}"
-        spotify_app_url = f"spotify:search:{search_query}"
+        # Create Spotify search URL
+        spotify_url = f"https://open.spotify.com/search/{encoded_query}"
 
         embed = discord.Embed(
             title="🎵 Add to Spotify",
-            description=f"**{player.current.title}**\n\n[Open in Spotify App]({spotify_app_url}) | [Open in Web Browser]({spotify_web_url})",
+            description=f"**{player.current.title}**\n\n[Search on Spotify]({spotify_url})",
             color=0x1DB954
         )
 
-        embed.set_footer(text="Click the links above to search for this song on Spotify")
+        embed.set_footer(text="Click the link above to search for this song on Spotify")
 
         await interaction.followup.send(embed=embed, ephemeral=True)
 
