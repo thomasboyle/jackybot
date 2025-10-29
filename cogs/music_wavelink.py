@@ -329,10 +329,10 @@ class MusicWavelinkCog(commands.Cog):
 
         # Row 1 - Playback Controls
         row1_buttons = [
-            ("⏮️", 'back', discord.ButtonStyle.secondary, player.current is not None),  # Seek back -10s
+            ("⏪", 'back', discord.ButtonStyle.secondary, player.current is not None),  # Seek back -10s
             ("⏯️", 'pause', discord.ButtonStyle.secondary, True),  # Play/Pause
-            ("⏭️", 'fwd', discord.ButtonStyle.secondary, player.current is not None),   # Seek forward +10s
-            ("⏩", 'skip', discord.ButtonStyle.secondary, True),  # Skip (always enabled)
+            ("⏩", 'fwd', discord.ButtonStyle.secondary, player.current is not None),   # Seek forward +10s
+            ("⏭️", 'skip', discord.ButtonStyle.secondary, True),  # Skip (always enabled)
             ("🔁", 'loop', discord.ButtonStyle.secondary, True),  # Loop
         ]
 
@@ -843,21 +843,25 @@ class MusicWavelinkCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
 
+        # Use the same artist/title extraction logic as the embed
+        artist = getattr(player.current, 'author', None) or getattr(player.current, 'artist', None)
         track_title = player.current.title
 
-        # Parse artist and title
-        artist, title = self._parse_artist_title(track_title)
-
-        # Create comprehensive search query that includes both artist and title
-        if artist and artist not in ["", "Various Artists", "Unknown Artist"]:
-            # Include both artist and title for best search results
-            search_query = f"{artist} {title}"
+        if not artist:
+            # Fallback to parsing the title for artist/title separation
+            artist, parsed_title = self._parse_artist_title(track_title)
+            title = parsed_title
         else:
-            # Fallback to full title if artist parsing failed
-            search_query = track_title
+            title = track_title
 
-        # Clean up the search query for better results
-        search_query = search_query.strip()
+        # Clean up artist/title if needed (same as embed)
+        if not artist or artist in ["", "Various Artists", "Unknown Artist"]:
+            artist = "Unknown Artist"
+        if not title:
+            title = track_title
+
+        # Create search query using the exact same values shown in embed
+        search_query = f"{artist} {title}"
 
         # URL encode the search query
         from urllib.parse import quote
@@ -968,21 +972,25 @@ class MusicWavelinkCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
 
+        # Use the same artist/title extraction logic as the embed
+        artist = getattr(player.current, 'author', None) or getattr(player.current, 'artist', None)
         track_title = player.current.title
 
-        # Parse artist and title
-        artist, title = self._parse_artist_title(track_title)
-
-        # Create comprehensive search query that includes both artist and title
-        if artist and artist not in ["", "Various Artists", "Unknown Artist"]:
-            # Include both artist and title for best search results
-            search_query = f"{artist} {title}"
+        if not artist:
+            # Fallback to parsing the title for artist/title separation
+            artist, parsed_title = self._parse_artist_title(track_title)
+            title = parsed_title
         else:
-            # Fallback to full title if artist parsing failed
-            search_query = track_title
+            title = track_title
 
-        # Clean up the search query for better results
-        search_query = search_query.strip()
+        # Clean up artist/title if needed (same as embed)
+        if not artist or artist in ["", "Various Artists", "Unknown Artist"]:
+            artist = "Unknown Artist"
+        if not title:
+            title = track_title
+
+        # Create search query using the exact same values shown in embed
+        search_query = f"{artist} {title}"
 
         # URL encode the search query
         from urllib.parse import quote
