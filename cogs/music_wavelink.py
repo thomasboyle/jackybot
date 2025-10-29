@@ -117,6 +117,9 @@ class MusicWavelinkCog(commands.Cog):
             # Cancel idle timer since we're starting playback
             await self._cancel_idle_timer(player)
 
+            # Stop any existing periodic updates
+            await self._stop_periodic_updates(player)
+
             # Store track start time for elapsed tracking
             player.track_start_time = time.time()
 
@@ -134,6 +137,9 @@ class MusicWavelinkCog(commands.Cog):
         """Handle track end event"""
         try:
             player = payload.player
+
+            # Stop periodic updates
+            await self._stop_periodic_updates(player)
 
             # Clear current message
             if hasattr(player, 'current_message'):
@@ -160,66 +166,66 @@ class MusicWavelinkCog(commands.Cog):
             logger.error(f"Error in on_wavelink_track_end: {e}", exc_info=True)
 
     def _create_now_playing_embed(self, track: wavelink.Playable, player: wavelink.Player, show_progress: bool = False) -> discord.Embed:
-        """Create now playing embed with optional progress tracking"""
-        embed = discord.Embed(title="🎵 Now Playing", color=0x00FF00)
+        """Create now playing embed with new structure and progress tracking"""
+        # Dynamic color based on player state
+        if not player.playing:
+            color = 0x5865F2  # Blue when idle
+        elif getattr(player, 'paused', False):
+            color = 0xFEE75C  # Orange when paused
+        else:
+            color = 0x57F287  # Green when playing
+
+        embed = discord.Embed(title="🎵 Now Playing", color=color, timestamp=discord.utils.utcnow())
 
         # Try to get artist from track attributes first
         artist = getattr(track, 'author', None) or getattr(track, 'artist', None)
 
-        if artist:
-            # Use the artist from track attributes and show title as is
-            embed.add_field(
-                name="Artist",
-                value=artist,
-                inline=True
-            )
-            embed.add_field(
-                name="Title",
-                value=f"[{track.title}]({getattr(track, 'uri', 'Unknown URI')})",
-                inline=False
-            )
-        else:
+        if not artist:
             # Fallback to parsing the title for artist/title separation
-            parsed_artist, parsed_title = self._parse_artist_title(track.title)
+            artist, title = self._parse_artist_title(track.title)
+        else:
+            title = track.title
 
-            if parsed_artist and parsed_artist not in ["", "Various Artists", "Unknown Artist"]:
-                embed.add_field(
-                    name="Artist",
-                    value=parsed_artist,
-                    inline=True
-                )
-                embed.add_field(
-                    name="Title",
-                    value=f"[{parsed_title}]({getattr(track, 'uri', 'Unknown URI')})",
-                    inline=True
-                )
-            else:
-                # Fallback to full title if no artist found
-                embed.add_field(
-                    name="Title",
-                    value=f"[{track.title}]({getattr(track, 'uri', 'Unknown URI')})",
-                    inline=False
-                )
+        # Clean up artist/title if needed
+        if not artist or artist in ["", "Various Artists", "Unknown Artist"]:
+            artist = "Unknown Artist"
+        if not title:
+            title = track.title
 
-        # Duration - handle different possible attribute names
+        # Author section with emoji
+        embed.set_author(name=f"🎤 {artist}")
+
+        # Main description: Song title in bold
+        embed.description = f"**{title}**"
+
+        # Get duration and elapsed time
         duration_ms = getattr(track, 'duration', None) or getattr(track, 'length', None) or getattr(track, 'duration_ms', None)
+        current_ms = self._get_elapsed_time(player) if show_progress else 0
 
+        # Fields
         if duration_ms:
-            embed.add_field(name="Duration", value=self._format_duration(duration_ms), inline=True)
+            current_time_str = self._format_duration(current_ms) if current_ms > 0 else "0:00"
+            total_time_str = self._format_duration(duration_ms)
+            embed.add_field(name="⏰ Duration", value=f"{current_time_str} / {total_time_str}", inline=True)
 
-        # Loop status
+        # Status field
+        status_icon = "⏸️" if getattr(player, 'paused', False) else "▶️"
+        status_text = "Paused" if getattr(player, 'paused', False) else "Playing"
+        embed.add_field(name="Status", value=f"{status_icon} {status_text}", inline=True)
+
+        # Loop field
         loop_mode = getattr(player, 'loop_mode', False)
-        embed.add_field(name="Loop", value="On" if loop_mode else "Off", inline=True)
+        loop_status = "On" if loop_mode else "Off"
+        embed.add_field(name="🔁 Loop", value=loop_status, inline=True)
 
-        # Show elapsed and remaining time if requested
-        if show_progress and duration_ms:
-            elapsed_ms = self._get_elapsed_time(player)
-            if elapsed_ms > 0:
-                elapsed_str = self._format_duration(elapsed_ms)
-                remaining_ms = max(0, duration_ms - elapsed_ms)
-                remaining_str = self._format_duration(remaining_ms)
-                embed.add_field(name="Elapsed", value=elapsed_str, inline=True)
-                embed.add_field(name="Remaining", value=remaining_str, inline=True)
+        # Queue field
+        queue_count = len(player.queue) if hasattr(player, 'queue') else 0
+        embed.add_field(name="📋 Queue", value=f"{queue_count} songs in queue", inline=True)
+
+        # Progress bar field
+        if show_progress and duration_ms and duration_ms > 0:
+            progress_bar = self._create_progress_bar(current_ms, duration_ms)
+            embed.add_field(name="Progress", value=progress_bar, inline=False)
 
         # Thumbnail - try multiple sources for YouTube thumbnails
         thumbnail = getattr(track, 'thumbnail', None) or getattr(track, 'artwork_url', None)
@@ -227,23 +233,22 @@ class MusicWavelinkCog(commands.Cog):
         if not thumbnail:
             # Try to extract YouTube thumbnail from URL
             track_uri = getattr(track, 'uri', None)
-            if track_uri and 'youtube.com' in track_uri or 'youtu.be' in track_uri:
+            if track_uri and ('youtube.com' in track_uri or 'youtu.be' in track_uri):
                 thumbnail = self._get_youtube_thumbnail(track_uri)
 
         if thumbnail:
-            # Use set_image for larger thumbnail display instead of set_thumbnail
             embed.set_image(url=thumbnail)
 
-        # Requester info
+        # Footer with requester info and avatar
         requester = getattr(player, 'last_requester', getattr(track, 'requester', None))
         if requester:
             requester_name = requester.display_name if hasattr(requester, 'display_name') else str(requester)
-            embed.set_footer(text=f"Requested by {requester_name}")
+            embed.set_footer(text=f"Requested by {requester_name}", icon_url=requester.avatar.url if hasattr(requester, 'avatar') and requester.avatar else None)
 
         return embed
 
     def _create_controls(self, player: wavelink.Player) -> View:
-        """Create control buttons"""
+        """Create control buttons with new 2-row layout"""
         view = View(timeout=None)
 
         async def control_callback(interaction: discord.Interaction, action: str):
@@ -264,6 +269,8 @@ class MusicWavelinkCog(commands.Cog):
                     await self._update_embed(player)
 
                 elif action == 'skip':
+                    if not player.queue or len(player.queue) == 0:
+                        return await interaction.response.send_message("No songs in queue to skip to.", ephemeral=True)
                     await player.skip()
                     await interaction.response.send_message(f"{interaction.user.name} skipped", ephemeral=True)
 
@@ -275,6 +282,8 @@ class MusicWavelinkCog(commands.Cog):
                     await self._update_embed(player)
 
                 elif action in ('fwd', 'back'):
+                    if not player.current:
+                        return await interaction.response.send_message("No song is currently playing.", ephemeral=True)
                     seconds = 10 if action == 'fwd' else -10
                     logger.info(f"Seeking {seconds} seconds")
                     try:
@@ -291,28 +300,98 @@ class MusicWavelinkCog(commands.Cog):
                 elif action == 'spotify':
                     await self.get_spotify_link(interaction, player)
 
+                elif action == 'youtube':
+                    await self.get_youtube_link(interaction, player)
+
+                elif action == 'queue':
+                    # Show queue embed
+                    if not player.queue or len(player.queue) == 0:
+                        embed = discord.Embed(title="🎶 Queue", description="Queue is empty", color=0x0000FF)
+                    else:
+                        embed = discord.Embed(title="🎶 Queue", color=0x0000FF)
+                        queue_list = list(player.queue)
+                        for i, track in enumerate(queue_list[:10], 1):
+                            duration_str = self._format_duration(track.duration) if track.duration else "..."
+                            embed.add_field(
+                                name=f"{i}. {track.title}",
+                                value=duration_str,
+                                inline=False
+                            )
+                        if len(queue_list) > 10:
+                            embed.add_field(
+                                name=f"... and {len(queue_list) - 10} more",
+                                value="",
+                                inline=False
+                            )
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
+
             except Exception as e:
                 logger.error(f"Control action {action} failed: {e}")
                 if not interaction.response.is_done():
                     await interaction.response.send_message("Action failed.", ephemeral=True)
 
-        # Create buttons
-        buttons_config = [
-            ("⏪", 'back', discord.ButtonStyle.grey),
-            ("⏯️", 'pause', discord.ButtonStyle.blurple),
-            ("⏩", 'fwd', discord.ButtonStyle.grey),
-            ("⏭️", 'skip', discord.ButtonStyle.grey),
-            ("🔁", 'loop', discord.ButtonStyle.grey),
-            ("📝", 'lyrics', discord.ButtonStyle.grey),
-            ("➕", 'spotify', discord.ButtonStyle.grey)
+        # Row 1 - Playback Controls
+        row1_buttons = [
+            ("⏮️", 'back', discord.ButtonStyle.primary, player.current is not None),  # Seek back -10s
+            ("⏯️", 'pause', discord.ButtonStyle.primary, True),  # Play/Pause
+            ("⏭️", 'fwd', discord.ButtonStyle.primary, player.current is not None),   # Seek forward +10s
+            ("⏩", 'skip', discord.ButtonStyle.primary, player.queue and len(player.queue) > 0),  # Skip
+            ("🔁", 'loop', discord.ButtonStyle.success if getattr(player, 'loop_mode', False) else discord.ButtonStyle.secondary, True),  # Loop
         ]
 
-        for emoji, action, style in buttons_config:
-            button = Button(style=style, emoji=emoji)
+        # Row 2 - Utility Features
+        row2_buttons = [
+            ("📝", 'lyrics', discord.ButtonStyle.secondary, True),    # Lyrics
+            ("💚", 'spotify', discord.ButtonStyle.success, True),     # Spotify
+            ("❤️", 'youtube', discord.ButtonStyle.success, True),     # YouTube
+            ("📋", 'queue', discord.ButtonStyle.secondary, True),     # Queue
+        ]
+
+        # Add buttons to view
+        for emoji, action, style, enabled in row1_buttons + row2_buttons:
+            button = Button(style=style, emoji=emoji, disabled=not enabled)
             button.callback = lambda i, a=action: control_callback(i, a)
             view.add_item(button)
 
         return view
+
+    async def _start_periodic_updates(self, player: wavelink.Player):
+        """Start periodic embed updates every 10 seconds"""
+        # Cancel any existing update task
+        await self._stop_periodic_updates(player)
+
+        async def periodic_update():
+            try:
+                while player.connected and player.current and hasattr(player, 'current_message'):
+                    await asyncio.sleep(10)  # Update every 10 seconds
+
+                    # Only update if player is still active and has a current message
+                    if not player.connected or not player.current or not hasattr(player, 'current_message'):
+                        break
+
+                    try:
+                        embed = self._create_now_playing_embed(player.current, player, show_progress=True)
+                        view = self._create_controls(player)  # Recreate controls to update button states
+                        await player.current_message.edit(embed=embed, view=view)
+                    except Exception as e:
+                        logger.error(f"Failed to update embed periodically: {e}")
+                        break  # Stop updating if there's an error
+
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.error(f"Periodic update task failed: {e}")
+
+        player.update_task = asyncio.create_task(periodic_update())
+
+    async def _stop_periodic_updates(self, player: wavelink.Player):
+        """Stop periodic embed updates"""
+        if hasattr(player, 'update_task') and not player.update_task.done():
+            player.update_task.cancel()
+            try:
+                await player.update_task
+            except asyncio.CancelledError:
+                pass
 
     async def _update_embed(self, player: wavelink.Player):
         """Update the now playing embed with current progress"""
@@ -321,7 +400,8 @@ class MusicWavelinkCog(commands.Cog):
 
         try:
             embed = self._create_now_playing_embed(player.current, player, show_progress=True)
-            await player.current_message.edit(embed=embed)
+            view = self._create_controls(player)  # Recreate controls to update button states
+            await player.current_message.edit(embed=embed, view=view)
         except Exception as e:
             logger.error(f"Failed to update embed: {e}")
 
@@ -331,6 +411,9 @@ class MusicWavelinkCog(commands.Cog):
         view = self._create_controls(player)
         message = await ctx_or_channel.send(embed=embed, view=view)
         player.current_message = message
+
+        # Start periodic updates
+        await self._start_periodic_updates(player)
 
     def _get_elapsed_time(self, player: wavelink.Player) -> int:
         """Get elapsed time in milliseconds for current track"""
@@ -581,6 +664,8 @@ class MusicWavelinkCog(commands.Cog):
         except commands.CommandError as e:
             return await ctx.send(str(e))
 
+        # Stop periodic updates
+        await self._stop_periodic_updates(player)
         player.queue.clear()
         await player.stop()
         # Start idle timer since playback stopped
@@ -609,7 +694,8 @@ class MusicWavelinkCog(commands.Cog):
         except commands.CommandError as e:
             return await ctx.send(str(e))
 
-        # Cancel idle timer since we're manually disconnecting
+        # Stop periodic updates and cancel idle timer since we're manually disconnecting
+        await self._stop_periodic_updates(player)
         await self._cancel_idle_timer(player)
         await player.disconnect()
         await ctx.send("Disconnected from voice channel.")
@@ -738,6 +824,60 @@ class MusicWavelinkCog(commands.Cog):
                 return f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg"
 
         return None
+
+    def _create_progress_bar(self, current_ms: int, total_ms: int, length: int = 20) -> str:
+        """Create a Unicode progress bar with percentage"""
+        if total_ms <= 0:
+            return "░░░░░░░░░░░░░░░░░░░░ 0%"
+
+        progress = min(current_ms / total_ms, 1.0)
+        filled = int(progress * length)
+        empty = length - filled
+
+        bar = "▓" * filled + "░" * empty
+        percentage = int(progress * 100)
+
+        return f"{bar} {percentage}%"
+
+    async def get_youtube_link(self, interaction: discord.Interaction, player: wavelink.Player):
+        """Get YouTube link for current track"""
+        if not player.current:
+            return await interaction.response.send_message("No song is currently playing.", ephemeral=True)
+
+        await interaction.response.defer(ephemeral=True)
+
+        track_title = player.current.title
+
+        # Parse artist and title
+        artist, title = self._parse_artist_title(track_title)
+
+        # Create comprehensive search query that includes both artist and title
+        if artist and artist not in ["", "Various Artists", "Unknown Artist"]:
+            # Include both artist and title for best search results
+            search_query = f"{artist} {title}"
+        else:
+            # Fallback to full title if artist parsing failed
+            search_query = track_title
+
+        # Clean up the search query for better results
+        search_query = search_query.strip()
+
+        # URL encode the search query
+        from urllib.parse import quote
+        encoded_query = quote(search_query)
+
+        # Create YouTube search URL
+        youtube_url = f"https://www.youtube.com/search?q={encoded_query}"
+
+        embed = discord.Embed(
+            title="❤️ YouTube Search",
+            description=f"**{player.current.title}**\n\n[Search on YouTube]({youtube_url})",
+            color=0xFF0000
+        )
+
+        embed.set_footer(text="Click the link above to search for this song on YouTube")
+
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
     async def get_lyrics(self, interaction: discord.Interaction, player: wavelink.Player):
         """Fetch lyrics for current track"""
