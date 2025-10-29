@@ -192,8 +192,8 @@ class MusicWavelinkCog(commands.Cog):
         if not title:
             title = track.title
 
-        # Main description: Artist below title, then song title with music note
-        embed.description = f"🎤 **{artist}**\n\n🎵 **{title}**"
+        # Main description: Artist and title with labels, reduced gap
+        embed.description = f"**Artist:** {artist}\n**Title:** {title}"
 
         # Get duration and elapsed time
         duration_ms = getattr(track, 'duration', None) or getattr(track, 'length', None) or getattr(track, 'duration_ms', None)
