@@ -303,24 +303,29 @@ class MusicWavelinkCog(commands.Cog):
                 elif action == 'queue':
                     await interaction.response.defer(ephemeral=True)
                     # Show queue embed
-                    if not player.queue or len(player.queue) == 0:
-                        embed = discord.Embed(title="🎶 Queue", description="Queue is empty", color=0x0000FF)
-                    else:
-                        embed = discord.Embed(title="🎶 Queue", color=0x0000FF)
-                        queue_list = list(player.queue)
-                        for i, track in enumerate(queue_list[:10], 1):
-                            duration_str = self._format_duration(track.duration) if track.duration else "..."
-                            embed.add_field(
-                                name=f"{i}. {track.title}",
-                                value=duration_str,
-                                inline=False
-                            )
-                        if len(queue_list) > 10:
-                            embed.add_field(
-                                name=f"... and {len(queue_list) - 10} more",
-                                value="",
-                                inline=False
-                            )
+                    try:
+                        queue_count = player.queue.count if hasattr(player.queue, 'count') else len(player.queue)
+                        if not player.queue or queue_count == 0:
+                            embed = discord.Embed(title="🎶 Queue", description="Queue is empty", color=0x0000FF)
+                        else:
+                            embed = discord.Embed(title="🎶 Queue", color=0x0000FF)
+                            queue_list = list(player.queue)
+                            for i, track in enumerate(queue_list[:10], 1):
+                                duration_str = self._format_duration(track.duration) if track.duration else "..."
+                                embed.add_field(
+                                    name=f"{i}. {track.title}",
+                                    value=duration_str,
+                                    inline=False
+                                )
+                            if len(queue_list) > 10:
+                                embed.add_field(
+                                    name=f"... and {len(queue_list) - 10} more",
+                                    value="",
+                                    inline=False
+                                )
+                    except Exception as queue_error:
+                        logger.error(f"Error accessing queue: {queue_error}")
+                        embed = discord.Embed(title="🎶 Queue", description="Error retrieving queue information", color=0xFF0000)
                     await interaction.followup.send(embed=embed, ephemeral=True)
 
             except Exception as e:
