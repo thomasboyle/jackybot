@@ -787,16 +787,17 @@ class MusicWavelinkCog(commands.Cog):
         from urllib.parse import quote
         encoded_query = quote(search_query)
 
-        # Create Spotify search URL
-        spotify_url = f"https://open.spotify.com/search/{encoded_query}"
+        # Create Spotify links (both web and app)
+        spotify_web_url = f"https://open.spotify.com/search/{encoded_query}"
+        spotify_app_url = f"spotify:search:{search_query}"
 
         embed = discord.Embed(
             title="🎵 Add to Spotify",
-            description=f"**{player.current.title}**\n\n[Search on Spotify]({spotify_url})",
+            description=f"**{player.current.title}**\n\n[Open in Spotify App]({spotify_app_url}) | [Open in Web Browser]({spotify_web_url})",
             color=0x1DB954
         )
 
-        embed.set_footer(text="Click the link above to search for this song on Spotify")
+        embed.set_footer(text="Click the links above to search for this song on Spotify")
 
         await interaction.followup.send(embed=embed, ephemeral=True)
 
