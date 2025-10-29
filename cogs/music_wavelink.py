@@ -231,7 +231,8 @@ class MusicWavelinkCog(commands.Cog):
                 thumbnail = self._get_youtube_thumbnail(track_uri)
 
         if thumbnail:
-            embed.set_thumbnail(url=thumbnail)
+            # Use set_image for larger thumbnail display instead of set_thumbnail
+            embed.set_image(url=thumbnail)
 
         # Requester info
         requester = getattr(player, 'last_requester', getattr(track, 'requester', None))
