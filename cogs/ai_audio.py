@@ -23,10 +23,25 @@ class AIAudio(commands.Cog):
         self._configure_cpu_optimization()
 
     def _configure_cpu_optimization(self):
-        """Configure PyTorch for aggressive CPU inference optimization."""
+        """Configure PyTorch for aggressive CPU inference optimization on VPS with resource limits."""
         torch.set_grad_enabled(False)
         
-        cpu_count = os.cpu_count() or 2
+        forced_single_core = os.environ.get('MUSICGEN_SINGLE_CORE', 'true').lower() == 'true'
+        
+        if forced_single_core:
+            cpu_count = 1
+            print("INFO: Single-core mode enabled (MUSICGEN_SINGLE_CORE=true)")
+        else:
+            try:
+                import resource
+                soft, hard = resource.getrlimit(resource.RLIMIT_AS)
+                if soft != hard:
+                    cpu_count = os.cpu_count() or 2
+                else:
+                    cpu_count = 1
+            except (ImportError, AttributeError):
+                cpu_count = os.cpu_count() or 2
+        
         torch.set_num_threads(cpu_count)
         torch.set_num_interop_threads(1)
         
@@ -41,9 +56,11 @@ class AIAudio(commands.Cog):
         
         try:
             import intel_extension_for_pytorch as ipex
-            print(f"CPU optimization: {cpu_count} threads + Intel IPEX acceleration")
+            print(f"CPU optimization: {cpu_count} core(s) + Intel IPEX acceleration enabled")
         except ImportError:
-            print(f"CPU optimization: {cpu_count} threads (Install intel-extension-for-pytorch for 2-3x speedup)")
+            print(f"CPU optimization: {cpu_count} core(s) configured")
+            if cpu_count == 1:
+                print("INFO: Running on 1 core - suitable for shared VPS environments")
 
     def cog_unload(self):
         """Clean up resources when cog is unloaded."""
@@ -77,6 +94,20 @@ class AIAudio(commands.Cog):
             print(f"BetterTransformer not available: {e}")
             return model
 
+    def _apply_ipex_optimization(self, model):
+        """Apply Intel IPEX optimization for CPU acceleration."""
+        try:
+            import intel_extension_for_pytorch as ipex
+            optimized_model = ipex.optimize(model, dtype=torch.float32, inplace=False)
+            print("Applied Intel IPEX optimization (2-3x speedup expected)")
+            return optimized_model
+        except ImportError:
+            print("Intel IPEX not installed. Install with: pip install intel-extension-for-pytorch")
+            return model
+        except Exception as e:
+            print(f"IPEX optimization failed: {e}")
+            return model
+
     def _load_model_sync(self):
         """Load the MusicGen model with aggressive CPU optimizations."""
         if self.model_loaded:
@@ -87,6 +118,7 @@ class AIAudio(commands.Cog):
             
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
+                torch.set_grad_enabled(False)
                 self.synthesiser = pipeline(
                     "text-to-audio",
                     "facebook/musicgen-small",
@@ -108,7 +140,6 @@ class AIAudio(commands.Cog):
                 pass
             
             self.synthesiser.model = self._apply_bettertransformer(self.synthesiser.model)
-            self.synthesiser.model = self._apply_dynamic_quantization(self.synthesiser.model)
             
             try:
                 torch.jit.optimize_for_inference(torch.jit.script(self.synthesiser.model))
@@ -148,6 +179,10 @@ class AIAudio(commands.Cog):
             
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
+            
+            import time
+            time.sleep(0.1)
+            gc.collect()
 
         self.model_loaded = False
         print("MusicGen model unloaded and memory freed")
@@ -158,12 +193,16 @@ class AIAudio(commands.Cog):
             raise Exception("Model not loaded")
 
         try:
+            import psutil
+            process = psutil.Process()
+            memory_before = process.memory_info().rss / (1024 ** 3)
+            
             with torch.inference_mode(), torch.cpu.amp.autocast():
                 music = self.synthesiser(
                     prompt,
                     forward_params={
                         "do_sample": True,
-                        "max_new_tokens": 256,
+                        "max_new_tokens": 128,
                         "num_beams": 1,
                         "temperature": 1.0,
                         "top_k": 250,
@@ -185,6 +224,14 @@ class AIAudio(commands.Cog):
                 rate=music["sampling_rate"],
                 data=audio_data
             )
+            
+            memory_after = process.memory_info().rss / (1024 ** 3)
+            memory_used = memory_after - memory_before
+            
+            if memory_after > 3.5:
+                print(f"WARNING: Memory usage at {memory_after:.2f}GB (threshold: 4GB)")
+            
+            print(f"Memory during generation: {memory_before:.2f}GB → {memory_after:.2f}GB (delta: {memory_used:+.2f}GB)")
 
             return temp_path, music["sampling_rate"]
 

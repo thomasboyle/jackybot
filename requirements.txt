@@ -76,3 +76,4 @@ yarl
 yt-dlp
 wavelink>=2.0.0
 zipp
+psutil
