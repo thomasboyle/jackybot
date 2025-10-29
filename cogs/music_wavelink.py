@@ -249,6 +249,9 @@ class MusicWavelinkCog(commands.Cog):
                 elif action == 'lyrics':
                     await self.get_lyrics(interaction, player)
 
+                elif action == 'spotify':
+                    await self.get_spotify_link(interaction, player)
+
             except Exception as e:
                 logger.error(f"Control action {action} failed: {e}")
                 if not interaction.response.is_done():
@@ -261,7 +264,8 @@ class MusicWavelinkCog(commands.Cog):
             ("⏩", 'fwd', discord.ButtonStyle.grey),
             ("⏭️", 'skip', discord.ButtonStyle.grey),
             ("🔁", 'loop', discord.ButtonStyle.grey),
-            ("📝", 'lyrics', discord.ButtonStyle.grey)
+            ("📝", 'lyrics', discord.ButtonStyle.grey),
+            ("➕", 'spotify', discord.ButtonStyle.grey)
         ]
 
         for emoji, action, style in buttons_config:
@@ -760,6 +764,41 @@ class MusicWavelinkCog(commands.Cog):
         except Exception as e:
             logger.error(f"Lyrics fetch failed for '{artist} - {title}': {e}")
             await interaction.followup.send("Failed to fetch lyrics. Please try again later.", ephemeral=True)
+
+    async def get_spotify_link(self, interaction: discord.Interaction, player: wavelink.Player):
+        """Get Spotify link for current track"""
+        if not player.current:
+            return await interaction.response.send_message("No song is currently playing.", ephemeral=True)
+
+        await interaction.response.defer(ephemeral=True)
+
+        track_title = player.current.title
+
+        # Parse artist and title
+        artist, title = self._parse_artist_title(track_title)
+
+        # Create search query
+        if artist:
+            search_query = f"{artist} {title}"
+        else:
+            search_query = title
+
+        # URL encode the search query
+        from urllib.parse import quote
+        encoded_query = quote(search_query)
+
+        # Create Spotify search URL
+        spotify_url = f"https://open.spotify.com/search/{encoded_query}"
+
+        embed = discord.Embed(
+            title="🎵 Add to Spotify",
+            description=f"**{player.current.title}**\n\n[Search on Spotify]({spotify_url})",
+            color=0x1DB954
+        )
+
+        embed.set_footer(text="Click the link above to search for this song on Spotify")
+
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(MusicWavelinkCog(bot))
