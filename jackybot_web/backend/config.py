@@ -13,6 +13,7 @@ class Config:
     DISCORD_REDIRECT_URI = os.environ.get('DISCORD_REDIRECT_URI', 'http://localhost:5000/auth/callback')
     DISCORD_API_BASE = 'https://discord.com/api/v10'
     WEBSOCKET_PORT = int(os.environ.get('WEBSOCKET_PORT', 5000))
+    WEB_INTERFACE_URL = os.environ.get('WEB_INTERFACE_URL', 'http://localhost:5173')
     CORS_ORIGINS = os.environ.get('CORS_ORIGINS', 'http://localhost:5173').split(',')
     
     COG_SETTINGS_PATH_ENV = os.environ.get('COG_SETTINGS_PATH')

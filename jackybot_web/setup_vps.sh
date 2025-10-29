@@ -195,6 +195,25 @@ configure_nginx() {
 server {
     listen 80;
     server_name $DOMAIN_NAME;
+    
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+    }
+    
+    location / {
+        return 301 https://\$host\$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    server_name $DOMAIN_NAME;
+
+    ssl_certificate /etc/letsencrypt/live/$DOMAIN_NAME/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$DOMAIN_NAME/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
 
     client_max_body_size 20M;
 
@@ -254,8 +273,15 @@ EOF
     read -p "Do you want to set up SSL with Let's Encrypt? (y/n): " SETUP_SSL
     if [ "$SETUP_SSL" = "y" ] || [ "$SETUP_SSL" = "Y" ]; then
         echo ">>> Setting up SSL certificate..."
-        sudo certbot --nginx -d "$DOMAIN_NAME"
+        sudo certbot --nginx -d "$DOMAIN_NAME" --non-interactive --agree-tos --email admin@$DOMAIN_NAME || {
+            echo ">>> SSL certificate setup failed. Please run manually:"
+            echo ">>> sudo certbot --nginx -d $DOMAIN_NAME"
+        }
         echo ">>> SSL certificate installed"
+        sudo systemctl reload nginx
+    else
+        echo ">>> Warning: SSL certificate not installed. HTTPS will not work until SSL is configured."
+        echo ">>> To install SSL later, run: sudo certbot --nginx -d $DOMAIN_NAME"
     fi
     echo ""
 }

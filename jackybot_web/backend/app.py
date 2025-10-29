@@ -68,7 +68,7 @@ def callback():
         session['access_token'] = credentials['access_token']
         session['refresh_token'] = credentials.get('refresh_token')
         
-        return redirect('http://localhost:5173/dashboard')
+        return redirect(f'{Config.WEB_INTERFACE_URL}/dashboard')
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
