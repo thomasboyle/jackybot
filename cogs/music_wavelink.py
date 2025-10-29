@@ -302,50 +302,29 @@ class MusicWavelinkCog(commands.Cog):
 
                 elif action == 'queue':
                     await interaction.response.defer(ephemeral=True)
-                    # Show queue embed
+                    # Show queue embed - use same logic as the queue command
                     try:
-                        # Debug queue properties
-                        logger.info(f"Player queue type: {type(player.queue)}")
-                        logger.info(f"Player queue: {player.queue}")
-                        logger.info(f"Player queue hasattr count: {hasattr(player.queue, 'count')}")
-
-                        if hasattr(player.queue, 'count'):
-                            queue_count = player.queue.count
-                            logger.info(f"Queue count via .count: {queue_count}")
-                        else:
-                            try:
-                                queue_count = len(player.queue)
-                                logger.info(f"Queue count via len(): {queue_count}")
-                            except:
-                                queue_count = 0
-                                logger.info("Could not get queue count")
-
-                        if not player.queue or queue_count == 0:
+                        if not player.queue or len(player.queue) == 0:
                             embed = discord.Embed(title="🎶 Queue", description="Queue is empty", color=0x0000FF)
                         else:
                             embed = discord.Embed(title="🎶 Queue", color=0x0000FF)
-                            try:
-                                queue_list = list(player.queue)
-                                logger.info(f"Queue list length: {len(queue_list)}")
-                                for i, track in enumerate(queue_list[:10], 1):
-                                    duration_str = self._format_duration(track.duration) if track.duration else "..."
-                                    embed.add_field(
-                                        name=f"{i}. {track.title}",
-                                        value=duration_str,
-                                        inline=False
-                                    )
-                                if len(queue_list) > 10:
-                                    embed.add_field(
-                                        name=f"... and {len(queue_list) - 10} more",
-                                        value="",
-                                        inline=False
-                                    )
-                            except Exception as list_error:
-                                logger.error(f"Error converting queue to list: {list_error}")
-                                embed = discord.Embed(title="🎶 Queue", description="Error retrieving queue information", color=0xFF0000)
-                    except Exception as queue_error:
-                        logger.error(f"Error accessing queue: {queue_error}")
-                        logger.error(f"Queue error details: {type(queue_error).__name__}: {queue_error}")
+                            # Show up to 10 tracks
+                            queue_list = list(player.queue)
+                            for i, track in enumerate(queue_list[:10], 1):
+                                duration_str = self._format_duration(track.duration) if track.duration else "..."
+                                embed.add_field(
+                                    name=f"{i}. {track.title}",
+                                    value=duration_str,
+                                    inline=False
+                                )
+                            if len(queue_list) > 10:
+                                embed.add_field(
+                                    name=f"... and {len(queue_list) - 10} more",
+                                    value="",
+                                    inline=False
+                                )
+                    except Exception as e:
+                        logger.error(f"Queue button error: {e}")
                         embed = discord.Embed(title="🎶 Queue", description="Error retrieving queue information", color=0xFF0000)
                     await interaction.followup.send(embed=embed, ephemeral=True)
 
