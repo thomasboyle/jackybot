@@ -301,6 +301,7 @@ class MusicWavelinkCog(commands.Cog):
                     await self.get_youtube_link(interaction, player)
 
                 elif action == 'queue':
+                    await interaction.response.defer(ephemeral=True)
                     # Show queue embed
                     if not player.queue or len(player.queue) == 0:
                         embed = discord.Embed(title="🎶 Queue", description="Queue is empty", color=0x0000FF)
@@ -320,7 +321,7 @@ class MusicWavelinkCog(commands.Cog):
                                 value="",
                                 inline=False
                             )
-                    await interaction.response.send_message(embed=embed, ephemeral=True)
+                    await interaction.followup.send(embed=embed, ephemeral=True)
 
             except Exception as e:
                 logger.error(f"Control action {action} failed: {e}")
@@ -406,7 +407,13 @@ class MusicWavelinkCog(commands.Cog):
         """Send now playing embed with controls to context or channel"""
         embed = self._create_now_playing_embed(player.current, player, show_progress=True)
         view = self._create_controls(player)
-        message = await ctx_or_channel.send(embed=embed, view=view)
+
+        # Use reply() if available (for command contexts), otherwise use send() (for channels)
+        if hasattr(ctx_or_channel, 'reply'):
+            message = await ctx_or_channel.reply(embed=embed, view=view)
+        else:
+            message = await ctx_or_channel.send(embed=embed, view=view)
+
         player.current_message = message
 
         # Start periodic updates
@@ -554,6 +561,8 @@ class MusicWavelinkCog(commands.Cog):
             else:
                 await player.play(track)
                 player.last_requester = ctx.author
+                # Send now playing embed as reply to the play command
+                await self._send_now_playing(ctx, player)
 
     @commands.command()
     async def queue(self, ctx: commands.Context):
@@ -991,7 +1000,7 @@ class MusicWavelinkCog(commands.Cog):
         # Create Spotify search URL
         spotify_url = f"https://open.spotify.com/search/{encoded_query}"
 
-        await interaction.followup.send(f"🎵 **Spotify Search:** {spotify_url}", ephemeral=True)
+        await interaction.followup.send(f"🔍 **Spotify Search:** {spotify_url}", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(MusicWavelinkCog(bot))
