@@ -9,6 +9,7 @@ import datetime
 import asyncio
 import functools
 import weakref
+import time
 
 class LoveCog(commands.Cog):
     def __init__(self, bot):
@@ -18,13 +19,26 @@ class LoveCog(commands.Cog):
         self.heart_image = None
         self.background = None
         self.mask = None
-        # Cache for avatar images with TTL
-        self.avatar_cache = weakref.WeakValueDictionary()
+        self.avatar_cache = {}
+        self.avatar_cache_time = {}
+        self.cache_ttl = 3600
+        self.session = None
+        self.assets_loaded = False
         
     async def cog_load(self):
-        # Run heavy operations in a thread pool
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, self._preload_assets)
+        try:
+            await loop.run_in_executor(None, self._preload_assets)
+            self.assets_loaded = True
+        except Exception as e:
+            print(f"Failed to preload assets: {e}")
+            self.assets_loaded = False
+            raise
+        self.session = aiohttp.ClientSession()
+
+    async def cog_unload(self):
+        if self.session:
+            await self.session.close()
 
     def _preload_assets(self):
         # Preload assets in a separate thread
@@ -60,7 +74,9 @@ class LoveCog(commands.Cog):
     @commands.command()
     async def love(self, ctx, member1: discord.Member, member2: discord.Member):
         async with ctx.typing():
-            # Calculate the score using a faster method
+            if not self.assets_loaded:
+                await self._ensure_assets_loaded()
+            
             pair_key = frozenset([member1.id, member2.id])
             current_date = datetime.date.today()
             today_str = current_date.strftime("%Y%m%d")
@@ -68,31 +84,30 @@ class LoveCog(commands.Cog):
             if pair_key in self.love_scores and self.love_scores[pair_key][1] == today_str:
                 love_score = self.love_scores[pair_key][0]
             else:
-                # Generate score deterministically without resetting random seed
                 seed_value = member1.id + member2.id + int(today_str)
-                love_score = ((seed_value % 100) + 1)  # Simple hash function
+                love_score = ((seed_value % 100) + 1)
                 self.love_scores[pair_key] = (love_score, today_str)
 
-            # Create image
             image_bytes = await self._create_love_image(member1, member2, love_score)
 
-            # Send the image
             await ctx.reply(file=discord.File(fp=image_bytes, filename='love_match.png'))
 
+    async def _ensure_assets_loaded(self):
+        if self.font is None:
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, self._preload_assets)
+            self.assets_loaded = True
+
     async def _create_love_image(self, member1, member2, love_score):
-        # Process image creation in thread pool
         loop = asyncio.get_event_loop()
         
-        # Fetch avatars concurrently first
         avatar_size = (150, 150)
-        async with aiohttp.ClientSession() as session:
-            avatar_tasks = [
-                self._get_avatar(session, member1.display_avatar.url, avatar_size),
-                self._get_avatar(session, member2.display_avatar.url, avatar_size)
-            ]
-            avatars = await asyncio.gather(*avatar_tasks)
+        avatar_tasks = [
+            self._get_avatar(self.session, member1.display_avatar.url, avatar_size),
+            self._get_avatar(self.session, member2.display_avatar.url, avatar_size)
+        ]
+        avatars = await asyncio.gather(*avatar_tasks)
         
-        # Then do CPU-bound image processing in thread pool
         return await loop.run_in_executor(
             None, 
             functools.partial(self._render_image, avatars, love_score)
@@ -145,25 +160,28 @@ class LoveCog(commands.Cog):
         return output_buffer
 
     async def _get_avatar(self, session, url, size):
-        # Check cache first
+        current_time = time.time()
+        
         if url in self.avatar_cache:
-            return self.avatar_cache[url]
+            if self.avatar_cache_time[url] + self.cache_ttl > current_time:
+                return self.avatar_cache[url]
+            else:
+                del self.avatar_cache[url]
+                del self.avatar_cache_time[url]
             
         async with session.get(url) as response:
             if response.status != 200:
-                # Use a default avatar if fetch fails
                 avatar = Image.new('RGBA', size, (200, 200, 200, 255))
             else:
                 avatar_data = await response.read()
                 loop = asyncio.get_event_loop()
-                # Process image in thread pool
                 avatar = await loop.run_in_executor(
                     None,
                     functools.partial(self._process_avatar, avatar_data, size)
                 )
                 
-        # Cache the result
         self.avatar_cache[url] = avatar
+        self.avatar_cache_time[url] = current_time
         return avatar
         
     def _process_avatar(self, avatar_data, size):
