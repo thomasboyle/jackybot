@@ -221,9 +221,28 @@ echo ""
 echo "========================================="
 echo "Step 7: Setting file permissions"
 echo "========================================="
-sudo chown -R www-data:www-data "$FRONTEND_DIR/dist" 2>/dev/null || \
-    sudo chown -R nginx:nginx "$FRONTEND_DIR/dist" 2>/dev/null || \
-    echo ">>> Note: Could not set ownership, may need manual adjustment"
+
+NGINX_USER="www-data"
+if id "nginx" &>/dev/null; then
+    NGINX_USER="nginx"
+fi
+
+echo ">>> Detected nginx user: $NGINX_USER"
+echo ">>> Making parent directories traversable for nginx..."
+
+PROJECT_PARENT="$(dirname "$PROJECT_ROOT")"
+if [ "$PROJECT_PARENT" = "/root" ] || [ "$(dirname "$PROJECT_PARENT")" = "/root" ]; then
+    echo ">>> Setting execute permission on parent directories (for traversal)..."
+    sudo chmod 755 /root 2>/dev/null || true
+    sudo chmod 755 "$PROJECT_PARENT" 2>/dev/null || true
+    sudo chmod 755 "$PROJECT_ROOT" 2>/dev/null || true
+fi
+
+echo ">>> Setting ownership and permissions on dist directory..."
+sudo chown -R $NGINX_USER:$NGINX_USER "$FRONTEND_DIR/dist" 2>/dev/null || \
+    echo ">>> Warning: Could not set ownership, may need manual adjustment"
+sudo chmod -R 755 "$FRONTEND_DIR/dist" 2>/dev/null || true
+
 echo ">>> Permissions set"
 echo ""
 
