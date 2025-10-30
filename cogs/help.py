@@ -122,57 +122,47 @@ class CustomHelpCommand(commands.Cog):
     
     @commands.command(name="help")
     async def custom_help(self, ctx, command=None):
-        """Custom help command with category support"""
+        """Custom help command directing users to web UI"""
         try:
-            commands_by_category = self.get_commands_by_category()
+            web_ui_url = "https://jackybot.xyz"
             
-            if command:
-                # Find the command in any category
-                for category, commands in commands_by_category.items():
-                    for cmd, desc in commands.items():
-                        # Match without the prefix
-                        if command.lower() == cmd.lower() or command.lower() == cmd.lower().strip('!'):
-                            embed = discord.Embed(
-                                title=f"Command: {cmd}",
-                                description=desc,
-                                color=0x2b2d31
-                            )
-                            await ctx.send(embed=embed)
-                            return
-                
-                # If command not found
-                await ctx.send(f"Command `{command}` not found. Use `!help` to see all commands.")
-                return
-            
-            # Default overview embed when no specific command is requested
-            overview_embed = discord.Embed(
-                title="Bot Commands",
-                description="Select a category from the dropdown menu below to view commands.",
-                color=0x2b2d31
+            embed = discord.Embed(
+                title="🌟 JackyBot Commands & Configuration",
+                description=f"**Visit our web interface to view all commands and configure the bot!**\n\n"
+                           f"**[Click here to access the Web UI]({web_ui_url})**\n\n"
+                           f"✨ Browse all available commands\n"
+                           f"⚙️ Configure bot settings and preferences\n"
+                           f"📊 View bot statistics and information",
+                color=0x4169e1,
+                url=web_ui_url
             )
             
-            # Add a field for each category showing command count
-            for category, commands in commands_by_category.items():
-                overview_embed.add_field(
-                    name=category,
-                    value=f"{len(commands)} commands",
-                    inline=True
-                )
-                
-            overview_embed.set_footer(text="Use !help [command] for detailed information about a specific command")
+            embed.add_field(
+                name="🔗 Quick Access",
+                value=f"[**Open Web Interface**]({web_ui_url})",
+                inline=False
+            )
             
-            # Create and send the view with the overview embed
-            view = self.HelpView(self)
-            await ctx.send(embed=overview_embed, view=view)
+            embed.add_field(
+                name="💡 Tip",
+                value="The web interface provides a complete command reference and allows you to customize bot settings for your server.",
+                inline=False
+            )
             
-            # Optional logging
+            embed.set_footer(text="For support, visit jackybot.xyz", icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None)
+            embed.set_thumbnail(url=self.bot.user.avatar.url if self.bot.user.avatar else None)
+            
+            view = View()
+            view.add_item(Button(label="Open Web UI", url=web_ui_url, style=discord.ButtonStyle.link, emoji="🌐"))
+            
+            await ctx.send(embed=embed, view=view)
+            
             if ctx.guild:
                 print(f'Command: help | Server: {ctx.guild.name}')
                 
         except Exception as e:
-            # Add error handling to prevent crashes
             print(f"Help command error: {e}")
-            await ctx.send("An error occurred displaying help. Please try again later.")
+            await ctx.send(f"An error occurred displaying help. Please visit https://jackybot.xyz for command information.")
     
     @commands.command(name="botinfo", aliases=["info"])
     async def botinfo(self, ctx):
