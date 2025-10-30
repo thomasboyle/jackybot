@@ -20,7 +20,7 @@ socketio = SocketIO(app, cors_allowed_origins=Config.CORS_ORIGINS, async_mode='t
 
 cog_manager = CogManager(Config.COG_SETTINGS_PATH, Config.COG_METADATA_PATH)
 
-DISCORD_OAUTH2_URL = 'https://discord.com/api/oauth2/authorize'
+DISCORD_OAUTH2_URL = 'https://discord.com/oauth2/authorize'
 DISCORD_TOKEN_URL = 'https://discord.com/api/oauth2/token'
 
 def refresh_access_token():
@@ -94,6 +94,14 @@ def login():
     session['oauth_state'] = state
     session.permanent = True
     
+    if not Config.DISCORD_CLIENT_ID:
+        logger.error("DISCORD_CLIENT_ID not configured")
+        return jsonify({'error': 'Discord OAuth not configured'}), 500
+    
+    if not Config.DISCORD_REDIRECT_URI:
+        logger.error("DISCORD_REDIRECT_URI not configured")
+        return jsonify({'error': 'Discord redirect URI not configured'}), 500
+    
     params = {
         'client_id': Config.DISCORD_CLIENT_ID,
         'redirect_uri': Config.DISCORD_REDIRECT_URI,
@@ -103,7 +111,7 @@ def login():
     }
     
     auth_url = f"{DISCORD_OAUTH2_URL}?{urlencode(params)}"
-    logger.info(f"OAuth login initiated, state saved: {state[:8]}...")
+    logger.info(f"OAuth login initiated, state saved: {state[:8]}..., URL: {auth_url}")
     return jsonify({'url': auth_url})
 
 @app.route('/auth/callback')
