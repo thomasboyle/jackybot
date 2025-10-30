@@ -158,15 +158,21 @@ def make_discord_request(method, endpoint, **kwargs):
     try:
         response = requests.request(method, f'{Config.DISCORD_API_BASE}{endpoint}', **kwargs)
         if response.status_code == 401:
-            logger.info("Access token expired, attempting refresh")
+            logger.info(f"Access token expired for {endpoint}, attempting refresh")
             if refresh_access_token():
                 access_token = session.get('access_token')
                 if not access_token:
                     logger.error("Token refresh succeeded but no access_token in session")
                     return None, 401
                 headers['Authorization'] = f'Bearer {access_token}'
+                logger.info(f"Retrying {endpoint} with refreshed token")
                 response = requests.request(method, f'{Config.DISCORD_API_BASE}{endpoint}', **kwargs)
+                if response.status_code == 401:
+                    logger.error(f"Discord API still returned 401 after token refresh for {endpoint}: {response.text}")
+                    return None, 401
+                logger.info(f"Retry successful for {endpoint}, status: {response.status_code}")
             else:
+                logger.error("Token refresh failed")
                 return None, 401
         return response, response.status_code
     except Exception as e:
@@ -205,7 +211,7 @@ def login():
         'client_id': Config.DISCORD_CLIENT_ID,
         'redirect_uri': redirect_uri,
         'response_type': 'code',
-        'scope': 'identify email',
+        'scope': 'identify email guilds',
         'state': state
     }
     
