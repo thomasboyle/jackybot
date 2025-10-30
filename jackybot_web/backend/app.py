@@ -20,18 +20,23 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.config.from_object(Config)
 
-# When behind a proxy (like Vite dev server), cookies need special handling
-# If frontend is HTTPS but backend is HTTP, Secure flag should be False
-if Config.WEB_INTERFACE_URL.startswith('https://') and not app.config.get('SESSION_COOKIE_SECURE'):
-    # Frontend is HTTPS but backend might be HTTP behind proxy
-    # Browsers will still accept cookies if Secure=False when proxied
-    app.config['SESSION_COOKIE_SECURE'] = False
-    logger.info("Session cookie Secure set to False (backend behind HTTPS proxy)")
+# Configure Flask to trust proxy headers (needed for proper HTTPS detection behind Nginx)
+from werkzeug.middleware.proxy_fix import ProxyFix
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
-# Ensure SameSite allows cookies to work with proxy
+# When behind an HTTPS proxy (like Nginx), detect HTTPS from X-Forwarded-Proto header
+# If WEB_INTERFACE_URL is HTTPS, assume we're behind an HTTPS proxy
+if Config.WEB_INTERFACE_URL.startswith('https://'):
+    app.config['SESSION_COOKIE_SECURE'] = True
+    logger.info("Session cookie Secure set to True (HTTPS enabled)")
+else:
+    app.config['SESSION_COOKIE_SECURE'] = False
+    logger.info("Session cookie Secure set to False (HTTP only)")
+
+# Ensure SameSite allows cookies to work cross-site if needed
 if app.config.get('SESSION_COOKIE_SAMESITE') == 'Strict':
     app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-    logger.info("Session cookie SameSite changed from Strict to Lax for proxy compatibility")
+    logger.info("Session cookie SameSite set to Lax for compatibility")
 
 CORS(app, origins=Config.CORS_ORIGINS, supports_credentials=True)
 
