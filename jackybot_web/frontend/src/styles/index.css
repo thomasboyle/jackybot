@@ -51,13 +51,13 @@
       rgba(255, 255, 255, 0.1),
       transparent
     );
-    transition: left 0.5s;
     pointer-events: none;
     z-index: 1;
   }
 
   .cog-card-glint:hover::before {
     left: 100%;
+    transition: left 0.5s;
   }
 
   .cog-card-glint-clickable {
