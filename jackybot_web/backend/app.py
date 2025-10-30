@@ -23,6 +23,64 @@ cog_manager = CogManager(Config.COG_SETTINGS_PATH, Config.COG_METADATA_PATH)
 DISCORD_OAUTH2_URL = 'https://discord.com/api/oauth2/authorize'
 DISCORD_TOKEN_URL = 'https://discord.com/api/oauth2/token'
 
+def refresh_access_token():
+    refresh_token = session.get('refresh_token')
+    if not refresh_token:
+        logger.warning("Attempted token refresh but no refresh_token in session")
+        return False
+    
+    data = {
+        'client_id': Config.DISCORD_CLIENT_ID,
+        'client_secret': Config.DISCORD_CLIENT_SECRET,
+        'grant_type': 'refresh_token',
+        'refresh_token': refresh_token
+    }
+    
+    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+    
+    try:
+        response = requests.post(DISCORD_TOKEN_URL, data=data, headers=headers)
+        response.raise_for_status()
+        credentials = response.json()
+        
+        session['access_token'] = credentials['access_token']
+        if 'refresh_token' in credentials:
+            session['refresh_token'] = credentials['refresh_token']
+        session.permanent = True
+        
+        logger.info("Access token refreshed successfully")
+        return True
+    except requests.exceptions.HTTPError as e:
+        logger.error(f"Token refresh failed: {e.response.status_code} - {e.response.text}")
+        session.clear()
+        return False
+    except Exception as e:
+        logger.error(f"Token refresh error: {str(e)}")
+        return False
+
+def make_discord_request(method, endpoint, **kwargs):
+    access_token = session.get('access_token')
+    if not access_token:
+        return None, 401
+    
+    headers = kwargs.get('headers', {})
+    headers['Authorization'] = f'Bearer {access_token}'
+    kwargs['headers'] = headers
+    
+    try:
+        response = requests.request(method, f'{Config.DISCORD_API_BASE}{endpoint}', **kwargs)
+        if response.status_code == 401:
+            logger.info("Access token expired, attempting refresh")
+            if refresh_access_token():
+                headers['Authorization'] = f'Bearer {session.get("access_token")}'
+                response = requests.request(method, f'{Config.DISCORD_API_BASE}{endpoint}', **kwargs)
+            else:
+                return None, 401
+        return response, response.status_code
+    except Exception as e:
+        logger.error(f"Error making Discord API request: {str(e)}")
+        return None, 500
+
 @app.route('/')
 def index():
     return jsonify({
@@ -102,19 +160,24 @@ def callback():
 
 @app.route('/auth/user')
 def get_user():
-    access_token = session.get('access_token')
-    
-    if not access_token:
+    if not session.get('access_token'):
+        logger.debug("GET /auth/user - No access token in session")
         return jsonify({'error': 'Not authenticated'}), 401
     
-    headers = {'Authorization': f'Bearer {access_token}'}
+    response, status_code = make_discord_request('GET', '/users/@me')
     
-    try:
-        response = requests.get(f'{Config.DISCORD_API_BASE}/users/@me', headers=headers)
-        response.raise_for_status()
-        return jsonify(response.json())
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    if not response:
+        session.clear()
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    if status_code != 200:
+        logger.error(f"Discord API error in get_user: {status_code} - {response.text}")
+        if status_code == 401:
+            session.clear()
+            return jsonify({'error': 'Not authenticated'}), 401
+        return jsonify({'error': f'Discord API error: {status_code}'}), status_code
+    
+    return jsonify(response.json())
 
 @app.route('/auth/logout', methods=['POST'])
 def logout():
@@ -123,23 +186,26 @@ def logout():
 
 @app.route('/api/servers')
 def get_servers():
-    access_token = session.get('access_token')
-    
-    if not access_token:
+    if not session.get('access_token'):
         return jsonify({'error': 'Not authenticated'}), 401
     
-    headers = {'Authorization': f'Bearer {access_token}'}
+    response, status_code = make_discord_request('GET', '/users/@me/guilds')
     
-    try:
-        response = requests.get(f'{Config.DISCORD_API_BASE}/users/@me/guilds', headers=headers)
-        response.raise_for_status()
-        guilds = response.json()
-        
-        admin_guilds = [g for g in guilds if (int(g['permissions']) & 0x8) == 0x8]
-        
-        return jsonify(admin_guilds)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    if not response:
+        session.clear()
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    if status_code != 200:
+        logger.error(f"Discord API error in get_servers: {status_code} - {response.text}")
+        if status_code == 401:
+            session.clear()
+            return jsonify({'error': 'Not authenticated'}), 401
+        return jsonify({'error': f'Discord API error: {status_code}'}), status_code
+    
+    guilds = response.json()
+    admin_guilds = [g for g in guilds if (int(g['permissions']) & 0x8) == 0x8]
+    
+    return jsonify(admin_guilds)
 
 @app.route('/api/cogs')
 def get_cogs():
