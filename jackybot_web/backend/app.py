@@ -5,8 +5,12 @@ import requests
 from urllib.parse import urlencode
 import secrets
 import os
+import logging
 from config import Config
 from cog_manager import CogManager
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -30,6 +34,7 @@ def index():
 def login():
     state = secrets.token_urlsafe(16)
     session['oauth_state'] = state
+    session.permanent = True
     
     params = {
         'client_id': Config.DISCORD_CLIENT_ID,
@@ -40,15 +45,31 @@ def login():
     }
     
     auth_url = f"{DISCORD_OAUTH2_URL}?{urlencode(params)}"
+    logger.info(f"OAuth login initiated, state saved: {state[:8]}...")
     return jsonify({'url': auth_url})
 
 @app.route('/auth/callback')
 def callback():
     code = request.args.get('code')
     state = request.args.get('state')
+    error = request.args.get('error')
     
-    if not code or state != session.get('oauth_state'):
-        return jsonify({'error': 'Invalid OAuth state'}), 400
+    if error:
+        logger.error(f"OAuth error from Discord: {error}")
+        return jsonify({'error': f'OAuth error: {error}'}), 400
+    
+    if not code:
+        logger.warning("OAuth callback missing code parameter")
+        return jsonify({'error': 'Missing authorization code'}), 400
+    
+    saved_state = session.get('oauth_state')
+    if not saved_state:
+        logger.warning("OAuth callback missing session state - session may have expired or cookies not working")
+        return jsonify({'error': 'Session expired. Please try logging in again.'}), 400
+    
+    if state != saved_state:
+        logger.warning(f"OAuth state mismatch: received {state[:8] if state else None}..., expected {saved_state[:8]}...")
+        return jsonify({'error': 'Invalid OAuth state. Possible CSRF attack or session expired.'}), 400
     
     data = {
         'client_id': Config.DISCORD_CLIENT_ID,
@@ -67,9 +88,16 @@ def callback():
         
         session['access_token'] = credentials['access_token']
         session['refresh_token'] = credentials.get('refresh_token')
+        session.permanent = True
+        session.pop('oauth_state', None)
         
+        logger.info("OAuth callback successful, redirecting to dashboard")
         return redirect(f'{Config.WEB_INTERFACE_URL}/dashboard')
+    except requests.exceptions.HTTPError as e:
+        logger.error(f"Discord API error: {e.response.status_code} - {e.response.text}")
+        return jsonify({'error': f'Discord API error: {e.response.status_code}'}), 500
     except Exception as e:
+        logger.error(f"OAuth callback error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/auth/user')

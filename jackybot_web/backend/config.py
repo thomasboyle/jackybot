@@ -16,6 +16,11 @@ class Config:
     WEB_INTERFACE_URL = os.environ.get('WEB_INTERFACE_URL', 'http://localhost:5173')
     CORS_ORIGINS = os.environ.get('CORS_ORIGINS', 'http://localhost:5173').split(',')
     
+    SESSION_COOKIE_SECURE = os.environ.get('SESSION_COOKIE_SECURE', 'False').lower() == 'true'
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = os.environ.get('SESSION_COOKIE_SAMESITE', 'Lax')
+    PERMANENT_SESSION_LIFETIME = 86400
+    
     COG_SETTINGS_PATH_ENV = os.environ.get('COG_SETTINGS_PATH')
     if COG_SETTINGS_PATH_ENV:
         COG_SETTINGS_PATH = COG_SETTINGS_PATH_ENV if os.path.isabs(COG_SETTINGS_PATH_ENV) else str(BASE_DIR / COG_SETTINGS_PATH_ENV)
