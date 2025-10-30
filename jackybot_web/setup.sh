@@ -3,7 +3,7 @@
 set -e
 
 echo "========================================="
-echo "Quick Setup for jackybot.xyz"
+echo "JackyBot Web UI - Complete Setup Script"
 echo "========================================="
 echo ""
 
@@ -17,6 +17,8 @@ FRONTEND_DIR="$SCRIPT_DIR/frontend"
 echo "Domain: $DOMAIN_NAME"
 echo "VPS IP: $VPS_IP"
 echo "Project root: $PROJECT_ROOT"
+echo "Backend directory: $BACKEND_DIR"
+echo "Frontend directory: $FRONTEND_DIR"
 echo ""
 
 read -p "Make sure jackybot.xyz DNS points to $VPS_IP. Press Enter to continue..."
@@ -29,7 +31,9 @@ check_command() {
     return 0
 }
 
-echo ">>> Step 0: Installing system dependencies (if needed)..."
+echo "========================================="
+echo "Step 1: Installing system dependencies"
+echo "========================================="
 if check_command apt-get; then
     sudo apt-get update
     sudo apt-get install -y python3 python3-pip python3-venv curl nginx certbot python3-certbot-nginx || true
@@ -52,30 +56,71 @@ elif check_command dnf; then
         curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
         sudo dnf install -y nodejs
     fi
+else
+    echo "Error: Could not detect package manager. Please install dependencies manually."
+    exit 1
 fi
+
+echo ">>> System dependencies installed"
+echo ">>> Python version: $(python3 --version)"
+echo ">>> Node.js version: $(node --version)"
+echo ">>> npm version: $(npm --version)"
 echo ""
 
-echo ">>> Step 1: Setting up Python virtual environment..."
+echo "========================================="
+echo "Step 2: Setting up Python backend"
+echo "========================================="
+echo ">>> Creating Python virtual environment..."
 if [ ! -d "$BACKEND_DIR/venv" ]; then
     python3 -m venv "$BACKEND_DIR/venv"
 fi
 
 source "$BACKEND_DIR/venv/bin/activate"
 pip install --upgrade pip --quiet
+echo ">>> Installing Python dependencies..."
 pip install -r "$BACKEND_DIR/requirements.txt" --quiet
-echo ">>> Python virtual environment ready"
+echo ">>> Python backend setup complete"
 echo ""
 
-echo ">>> Step 2: Updating environment variables..."
+echo "========================================="
+echo "Step 3: Setting up frontend"
+echo "========================================="
+cd "$FRONTEND_DIR"
+echo ">>> Installing Node.js dependencies..."
+if [ ! -d "node_modules" ]; then
+    npm install
+else
+    echo ">>> node_modules exists, running npm install to update..."
+    npm install
+fi
+
+echo ">>> Building frontend for production..."
+npm run build
+
+if [ ! -d "dist" ]; then
+    echo "ERROR: Frontend build failed! dist directory not found."
+    exit 1
+fi
+
+echo ">>> Frontend built successfully"
+cd "$SCRIPT_DIR"
+echo ""
+
+echo "========================================="
+echo "Step 4: Configuring environment variables"
+echo "========================================="
 ENV_FILE="$PROJECT_ROOT/.env"
 
 if [ ! -f "$ENV_FILE" ]; then
-    echo "Creating .env file..."
+    echo ">>> Creating .env file from template..."
     cp "$SCRIPT_DIR/env_example.txt" "$ENV_FILE"
+else
+    echo ">>> .env file already exists, updating values..."
 fi
 
 SECRET_KEY=$(openssl rand -hex 32)
-sed -i "s|FLASK_SECRET_KEY=.*|FLASK_SECRET_KEY=$SECRET_KEY|" "$ENV_FILE"
+sed -i "s|FLASK_SECRET_KEY=.*|FLASK_SECRET_KEY=$SECRET_KEY|" "$ENV_FILE" 2>/dev/null || \
+    echo "FLASK_SECRET_KEY=$SECRET_KEY" >> "$ENV_FILE"
 sed -i "s|DISCORD_REDIRECT_URI=.*|DISCORD_REDIRECT_URI=https://jackybot.xyz/auth/callback|" "$ENV_FILE"
 sed -i "s|WEB_INTERFACE_URL=.*|WEB_INTERFACE_URL=https://jackybot.xyz|" "$ENV_FILE"
 sed -i "s|CORS_ORIGINS=.*|CORS_ORIGINS=https://jackybot.xyz|" "$ENV_FILE"
@@ -88,12 +133,14 @@ echo "  - DISCORD_CLIENT_ID=your_client_id"
 echo "  - DISCORD_CLIENT_SECRET=your_client_secret"
 echo ""
 read -p "Press Enter after verifying/updating Discord credentials in .env file..."
-
 echo ""
-echo ">>> Step 3: Configuring Nginx (HTTP first, SSL will be added by certbot)..."
+
+echo "========================================="
+echo "Step 5: Configuring Nginx"
+echo "========================================="
 NGINX_CONFIG="/etc/nginx/sites-available/jackybot-web"
 
-# Create initial HTTP-only config for certbot to work
+echo ">>> Creating Nginx configuration (HTTP first, SSL will be added)..."
 sudo tee "$NGINX_CONFIG" > /dev/null <<EOF
 server {
     listen 80;
@@ -150,13 +197,16 @@ if [ -f /etc/nginx/sites-enabled/default ]; then
     sudo rm /etc/nginx/sites-enabled/default
 fi
 
+echo ">>> Testing Nginx configuration..."
 sudo nginx -t
+echo ">>> Reloading Nginx..."
 sudo systemctl reload nginx
-
 echo ">>> Nginx configured (HTTP)"
 echo ""
 
-echo ">>> Step 4: Setting up SSL certificate with Let's Encrypt..."
+echo "========================================="
+echo "Step 6: Setting up SSL/HTTPS"
+echo "========================================="
 read -p "Enter your email for Let's Encrypt notifications: " EMAIL
 echo ">>> Requesting SSL certificate (this may take a moment)..."
 sudo certbot --nginx -d "$DOMAIN_NAME" --non-interactive --agree-tos --email "$EMAIL" --redirect || {
@@ -168,84 +218,61 @@ sudo systemctl reload nginx
 echo ">>> SSL certificate installed and HTTPS configured"
 echo ""
 
-echo ">>> Step 5: Ensuring frontend is built..."
-cd "$FRONTEND_DIR"
-if [ ! -d "node_modules" ]; then
-    npm install
-fi
-npm run build
-cd "$SCRIPT_DIR"
-echo ">>> Frontend built"
-echo ""
-
-echo ">>> Step 6: Setting file permissions..."
-sudo chown -R www-data:www-data "$FRONTEND_DIR/dist" 2>/dev/null || sudo chown -R nginx:nginx "$FRONTEND_DIR/dist" 2>/dev/null || echo ">>> Note: Could not set ownership, may need manual adjustment"
+echo "========================================="
+echo "Step 7: Setting file permissions"
+echo "========================================="
+sudo chown -R www-data:www-data "$FRONTEND_DIR/dist" 2>/dev/null || \
+    sudo chown -R nginx:nginx "$FRONTEND_DIR/dist" 2>/dev/null || \
+    echo ">>> Note: Could not set ownership, may need manual adjustment"
 echo ">>> Permissions set"
-echo ""
-
-echo ">>> Step 7: Creating systemd service..."
-VPS_USER=${SUDO_USER:-$USER}
-if [ "$VPS_USER" = "root" ]; then
-    VPS_USER=$(who | awk '{print $1}' | head -1)
-fi
-
-read -p "Enter VPS user for the service (default: $VPS_USER): " INPUT_USER
-VPS_USER=${INPUT_USER:-$VPS_USER}
-
-SERVICE_FILE="/etc/systemd/system/jackybot-web-backend.service"
-
-sudo tee "$SERVICE_FILE" > /dev/null <<EOF
-[Unit]
-Description=JackyBot Web Interface Backend
-After=network.target
-
-[Service]
-Type=simple
-User=$VPS_USER
-WorkingDirectory=$BACKEND_DIR
-Environment="PATH=$BACKEND_DIR/venv/bin"
-ExecStart=$BACKEND_DIR/venv/bin/python $BACKEND_DIR/app.py
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-sudo systemctl daemon-reload
-sudo systemctl enable jackybot-web-backend.service
-echo ">>> Systemd service created and enabled"
 echo ""
 
 echo "========================================="
 echo "Setup Complete!"
 echo "========================================="
 echo ""
-echo "Next steps:"
+echo "All components have been set up:"
+echo "  ✓ System dependencies installed"
+echo "  ✓ Python backend dependencies installed"
+echo "  ✓ Frontend built for production"
+echo "  ✓ Environment variables configured"
+echo "  ✓ Nginx configured"
+echo "  ✓ SSL/HTTPS enabled"
 echo ""
-echo "1. Make sure your .env file has all required values:"
-echo "   - DISCORD_CLIENT_ID"
-echo "   - DISCORD_CLIENT_SECRET"
-echo "   - DISCORD_REDIRECT_URI=https://jackybot.xyz/auth/callback"
-echo "   - WEB_INTERFACE_URL=https://jackybot.xyz"
-echo "   - CORS_ORIGINS=https://jackybot.xyz"
+echo "========================================="
+echo "Next Steps - Start Services Manually"
+echo "========================================="
+echo ""
+echo "1. Verify .env file has Discord credentials:"
+echo "   $ENV_FILE"
+echo "   Required: DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET"
 echo ""
 echo "2. Update Discord OAuth2 redirect URI in Discord Developer Portal:"
 echo "   https://jackybot.xyz/auth/callback"
 echo ""
-echo "3. Start the backend service:"
-echo "   sudo systemctl start jackybot-web-backend"
-echo "   sudo systemctl status jackybot-web-backend"
+echo "3. Start the backend (Terminal 1):"
+echo "   cd $BACKEND_DIR"
+echo "   python app.py"
 echo ""
-echo "4. Verify Nginx is running:"
+echo "4. Start the frontend (Terminal 2 - optional for development):"
+echo "   cd $SCRIPT_DIR"
+echo "   ./start_frontend.sh"
+echo ""
+echo "   Note: For production, frontend is already built and served by Nginx"
+echo ""
+echo "5. Verify Nginx is running:"
 echo "   sudo systemctl status nginx"
 echo ""
-echo "5. Access your web interface at:"
+echo "6. Access your web interface at:"
 echo "   https://jackybot.xyz"
 echo ""
-echo "6. Useful commands:"
-echo "   Check backend logs: sudo journalctl -u jackybot-web-backend -f"
-echo "   Restart backend: sudo systemctl restart jackybot-web-backend"
-echo "   Restart Nginx: sudo systemctl restart nginx"
+echo "========================================="
+echo "Useful Commands"
+echo "========================================="
+echo "  Restart Nginx:      sudo systemctl restart nginx"
+echo "  Check Nginx logs:   sudo tail -f /var/log/nginx/error.log"
+echo "  Check Nginx access: sudo tail -f /var/log/nginx/access.log"
+echo "  Test Nginx config:  sudo nginx -t"
+echo "  Renew SSL cert:     sudo certbot renew"
 echo ""
 
