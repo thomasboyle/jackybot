@@ -6,6 +6,8 @@ from urllib.parse import urlencode
 import secrets
 import os
 import logging
+import threading
+import time
 from config import Config
 from cog_manager import CogManager
 
@@ -48,11 +50,43 @@ cog_manager = CogManager(Config.COG_SETTINGS_PATH, Config.COG_METADATA_PATH)
 DISCORD_OAUTH2_URL = 'https://discord.com/oauth2/authorize'
 DISCORD_TOKEN_URL = 'https://discord.com/api/oauth2/token'
 
+_refresh_locks = {}  # Maps refresh_token -> (lock, condition, in_progress, result, new_access_token)
+_refresh_locks_lock = threading.Lock()  # Protects _refresh_locks dict
+
 def refresh_access_token():
     refresh_token = session.get('refresh_token')
     if not refresh_token:
         logger.warning("Attempted token refresh but no refresh_token in session")
         return False
+    
+    with _refresh_locks_lock:
+        if refresh_token not in _refresh_locks:
+            lock = threading.Lock()
+            condition = threading.Condition(lock)
+            _refresh_locks[refresh_token] = {
+                'lock': lock,
+                'condition': condition,
+                'in_progress': False,
+                'result': None,
+                'new_access_token': None
+            }
+        refresh_state = _refresh_locks[refresh_token]
+    
+    lock = refresh_state['lock']
+    condition = refresh_state['condition']
+    
+    with condition:
+        if refresh_state['in_progress']:
+            logger.info("Token refresh already in progress for this session, waiting for completion")
+            condition.wait()
+            if refresh_state['result'] and refresh_state['new_access_token']:
+                session['access_token'] = refresh_state['new_access_token']
+                logger.info("Updated session with refreshed token from concurrent request")
+            return refresh_state['result']
+        
+        refresh_state['in_progress'] = True
+        refresh_state['result'] = None
+        refresh_state['new_access_token'] = None
     
     data = {
         'client_id': Config.DISCORD_CLIENT_ID,
@@ -68,19 +102,43 @@ def refresh_access_token():
         response.raise_for_status()
         credentials = response.json()
         
-        session['access_token'] = credentials['access_token']
-        if 'refresh_token' in credentials:
-            session['refresh_token'] = credentials['refresh_token']
+        new_access_token = credentials['access_token']
+        new_refresh_token = credentials.get('refresh_token')
+        
+        session['access_token'] = new_access_token
+        if new_refresh_token:
+            session['refresh_token'] = new_refresh_token
         session.permanent = True
         
+        with condition:
+            refresh_state['new_access_token'] = new_access_token
+            refresh_state['in_progress'] = False
+            refresh_state['result'] = True
+            condition.notify_all()
+        
         logger.info("Access token refreshed successfully")
+        
+        def cleanup_refresh_state():
+            time.sleep(60)
+            with _refresh_locks_lock:
+                _refresh_locks.pop(refresh_token, None)
+        threading.Thread(target=cleanup_refresh_state, daemon=True).start()
+        
         return True
     except requests.exceptions.HTTPError as e:
         logger.error(f"Token refresh failed: {e.response.status_code} - {e.response.text}")
         session.clear()
+        with condition:
+            refresh_state['in_progress'] = False
+            refresh_state['result'] = False
+            condition.notify_all()
         return False
     except Exception as e:
         logger.error(f"Token refresh error: {str(e)}")
+        with condition:
+            refresh_state['in_progress'] = False
+            refresh_state['result'] = False
+            condition.notify_all()
         return False
 
 def make_discord_request(method, endpoint, **kwargs):
@@ -97,7 +155,11 @@ def make_discord_request(method, endpoint, **kwargs):
         if response.status_code == 401:
             logger.info("Access token expired, attempting refresh")
             if refresh_access_token():
-                headers['Authorization'] = f'Bearer {session.get("access_token")}'
+                access_token = session.get('access_token')
+                if not access_token:
+                    logger.error("Token refresh succeeded but no access_token in session")
+                    return None, 401
+                headers['Authorization'] = f'Bearer {access_token}'
                 response = requests.request(method, f'{Config.DISCORD_API_BASE}{endpoint}', **kwargs)
             else:
                 return None, 401
