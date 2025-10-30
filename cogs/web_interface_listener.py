@@ -106,7 +106,7 @@ class WebInterfaceListener(commands.Cog):
             return True
         
         if not self.is_cog_enabled(ctx.guild.id, cog_name):
-            await ctx.send(f'The `{cog_name}` module is currently disabled on this server.', ephemeral=True)
+            await ctx.reply(f'The `{cog_name}` module is currently disabled on this server.', ephemeral=True)
             return False
         
         return True
