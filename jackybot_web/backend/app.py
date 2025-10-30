@@ -9,14 +9,39 @@ import logging
 from config import Config
 from cog_manager import CogManager
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.config.from_object(Config)
+
+# When behind a proxy (like Vite dev server), cookies need special handling
+# If frontend is HTTPS but backend is HTTP, Secure flag should be False
+if Config.WEB_INTERFACE_URL.startswith('https://') and not app.config.get('SESSION_COOKIE_SECURE'):
+    # Frontend is HTTPS but backend might be HTTP behind proxy
+    # Browsers will still accept cookies if Secure=False when proxied
+    app.config['SESSION_COOKIE_SECURE'] = False
+    logger.info("Session cookie Secure set to False (backend behind HTTPS proxy)")
+
+# Ensure SameSite allows cookies to work with proxy
+if app.config.get('SESSION_COOKIE_SAMESITE') == 'Strict':
+    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+    logger.info("Session cookie SameSite changed from Strict to Lax for proxy compatibility")
+
 CORS(app, origins=Config.CORS_ORIGINS, supports_credentials=True)
 
 socketio = SocketIO(app, cors_allowed_origins=Config.CORS_ORIGINS, async_mode='threading')
+
+@app.before_request
+def log_request_info():
+    if request.path.startswith('/auth'):
+        logger.info(f"Request: {request.method} {request.path}")
+        logger.info(f"  Host: {request.host}, Origin: {request.headers.get('Origin')}")
+        logger.info(f"  Cookies received: {list(request.cookies.keys())}")
+        logger.info(f"  Session keys: {list(session.keys())}")
 
 cog_manager = CogManager(Config.COG_SETTINGS_PATH, Config.COG_METADATA_PATH)
 
@@ -129,6 +154,7 @@ def callback():
     
     callback_url = request.url
     logger.info(f"OAuth callback received: URL={callback_url}, remote_addr={request.remote_addr}")
+    logger.info(f"Session before token exchange - keys: {list(session.keys())}, has oauth_state: {bool(session.get('oauth_state'))}")
     
     if error:
         logger.error(f"OAuth error from Discord: {error}")
@@ -170,8 +196,11 @@ def callback():
         session.permanent = True
         session.pop('oauth_state', None)
         
-        logger.info("OAuth callback successful, redirecting to dashboard")
-        return redirect(f'{Config.WEB_INTERFACE_URL}/dashboard')
+        logger.info(f"OAuth callback successful - Session keys after save: {list(session.keys())}, has access_token: {bool(session.get('access_token'))}")
+        logger.info(f"Session cookie secure: {app.config.get('SESSION_COOKIE_SECURE')}, same_site: {app.config.get('SESSION_COOKIE_SAMESITE')}")
+        
+        response = redirect(f'{Config.WEB_INTERFACE_URL}/dashboard')
+        return response
     except requests.exceptions.HTTPError as e:
         error_detail = e.response.text if e.response else str(e)
         logger.error(f"Discord API error during token exchange: {e.response.status_code} - {error_detail}. redirect_uri used: {redirect_uri}")
@@ -184,6 +213,7 @@ def callback():
 
 @app.route('/auth/user')
 def get_user():
+    logger.info(f"GET /auth/user - Session keys: {list(session.keys())}, has access_token: {bool(session.get('access_token'))}")
     if not session.get('access_token'):
         logger.debug("GET /auth/user - No access token in session")
         return jsonify({'error': 'Not authenticated'}), 401

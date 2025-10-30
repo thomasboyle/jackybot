@@ -2,9 +2,13 @@ import os
 from dotenv import load_dotenv
 from pathlib import Path
 
-load_dotenv()
-
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+ENV_FILE = BASE_DIR / '.env'
+
+if ENV_FILE.exists():
+    load_dotenv(ENV_FILE)
+else:
+    load_dotenv()
 
 class Config:
     SECRET_KEY = os.environ.get('FLASK_SECRET_KEY', 'dev-secret-key-change-in-production')
