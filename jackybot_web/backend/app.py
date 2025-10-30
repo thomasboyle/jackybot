@@ -102,16 +102,23 @@ def login():
         logger.error("DISCORD_REDIRECT_URI not configured")
         return jsonify({'error': 'Discord redirect URI not configured'}), 500
     
+    redirect_uri = Config.DISCORD_REDIRECT_URI
+    if 'localhost' in redirect_uri or '127.0.0.1' in redirect_uri:
+        logger.warning(f"Redirect URI contains localhost/127.0.0.1: {redirect_uri}. This will NOT work for external users accessing the site from other machines. Ensure DISCORD_REDIRECT_URI is set to your public URL (e.g., https://91.98.193.41:5173/callback)")
+    
+    if not redirect_uri.startswith('https://') and not redirect_uri.startswith('http://localhost'):
+        logger.warning(f"Redirect URI is not HTTPS: {redirect_uri}. Discord requires HTTPS for non-localhost URIs.")
+    
     params = {
         'client_id': Config.DISCORD_CLIENT_ID,
-        'redirect_uri': Config.DISCORD_REDIRECT_URI,
+        'redirect_uri': redirect_uri,
         'response_type': 'code',
         'scope': 'identify email',
         'state': state
     }
     
     auth_url = f"{DISCORD_OAUTH2_URL}?{urlencode(params)}"
-    logger.info(f"OAuth login initiated, state saved: {state[:8]}..., URL: {auth_url}")
+    logger.info(f"OAuth login initiated, redirect_uri={redirect_uri}, state saved: {state[:8]}..., full URL: {auth_url}")
     return jsonify({'url': auth_url})
 
 @app.route('/auth/callback')
@@ -119,6 +126,9 @@ def callback():
     code = request.args.get('code')
     state = request.args.get('state')
     error = request.args.get('error')
+    
+    callback_url = request.url
+    logger.info(f"OAuth callback received: URL={callback_url}, remote_addr={request.remote_addr}")
     
     if error:
         logger.error(f"OAuth error from Discord: {error}")
@@ -137,12 +147,15 @@ def callback():
         logger.warning(f"OAuth state mismatch: received {state[:8] if state else None}..., expected {saved_state[:8]}...")
         return jsonify({'error': 'Invalid OAuth state. Possible CSRF attack or session expired.'}), 400
     
+    redirect_uri = Config.DISCORD_REDIRECT_URI
+    logger.info(f"Exchanging code for token using redirect_uri={redirect_uri}")
+    
     data = {
         'client_id': Config.DISCORD_CLIENT_ID,
         'client_secret': Config.DISCORD_CLIENT_SECRET,
         'grant_type': 'authorization_code',
         'code': code,
-        'redirect_uri': Config.DISCORD_REDIRECT_URI
+        'redirect_uri': redirect_uri
     }
     
     headers = {'Content-Type': 'application/x-www-form-urlencoded'}
@@ -160,7 +173,10 @@ def callback():
         logger.info("OAuth callback successful, redirecting to dashboard")
         return redirect(f'{Config.WEB_INTERFACE_URL}/dashboard')
     except requests.exceptions.HTTPError as e:
-        logger.error(f"Discord API error: {e.response.status_code} - {e.response.text}")
+        error_detail = e.response.text if e.response else str(e)
+        logger.error(f"Discord API error during token exchange: {e.response.status_code} - {error_detail}. redirect_uri used: {redirect_uri}")
+        if e.response.status_code == 400:
+            logger.error("This often indicates a redirect_uri mismatch. Ensure DISCORD_REDIRECT_URI matches exactly what's registered in Discord Developer Portal.")
         return jsonify({'error': f'Discord API error: {e.response.status_code}'}), 500
     except Exception as e:
         logger.error(f"OAuth callback error: {str(e)}")
