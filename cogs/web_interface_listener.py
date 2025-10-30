@@ -21,6 +21,7 @@ class WebInterfaceListener(commands.Cog):
         if self.connection_task:
             self.connection_task.cancel()
         asyncio.create_task(self.sio.disconnect())
+        self.bot.remove_check(self.global_check)
     
     def setup_socket_handlers(self):
         @self.sio.on('connect')
@@ -80,7 +81,16 @@ class WebInterfaceListener(commands.Cog):
         
         return self.guild_cog_states[guild_id].get(cog_name, True)
     
-    async def cog_check(self, ctx: commands.Context) -> bool:
+    def get_cog_name_from_module(self, cog) -> str:
+        if not cog:
+            return None
+        
+        module_name = cog.__class__.__module__
+        if module_name.startswith('cogs.'):
+            return module_name.split('.')[1]
+        return None
+    
+    async def global_check(self, ctx: commands.Context) -> bool:
         if not ctx.guild:
             return True
         
@@ -88,11 +98,11 @@ class WebInterfaceListener(commands.Cog):
         if not cog:
             return True
         
-        cog_name = cog.__class__.__name__.lower().replace('cog', '')
+        cog_name = self.get_cog_name_from_module(cog)
         if not cog_name:
-            cog_name = cog.__class__.__name__.lower()
+            return True
         
-        if cog_name == 'webinterfacelistener' or cog_name == 'help':
+        if cog_name == 'web_interface_listener' or cog_name == 'help':
             return True
         
         if not self.is_cog_enabled(ctx.guild.id, cog_name):
@@ -102,5 +112,7 @@ class WebInterfaceListener(commands.Cog):
         return True
 
 async def setup(bot):
-    await bot.add_cog(WebInterfaceListener(bot))
+    listener = WebInterfaceListener(bot)
+    await bot.add_cog(listener)
+    bot.add_check(listener.global_check)
 
