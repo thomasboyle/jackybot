@@ -38,6 +38,16 @@ export default defineConfig({
         secure: false,
         ws: false,
       },
+      '/callback': {
+        target: backendUrl,
+        changeOrigin: true,
+        secure: false,
+        ws: false,
+        rewrite: (path) => {
+          const queryString = path.includes('?') ? path.substring(path.indexOf('?')) : '';
+          return '/auth/callback' + queryString;
+        },
+      },
       '/socket.io': {
         target: backendUrl,
         changeOrigin: true,
