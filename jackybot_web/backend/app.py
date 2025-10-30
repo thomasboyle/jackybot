@@ -375,7 +375,7 @@ def update_server_settings(server_id):
         'server_id': server_id,
         'cog_name': cog_name,
         'enabled': enabled
-    }, broadcast=True)
+    })
     
     return jsonify(updated_settings)
 
