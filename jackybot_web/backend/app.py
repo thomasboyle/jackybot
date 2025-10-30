@@ -379,6 +379,24 @@ def update_server_settings(server_id):
     
     return jsonify(updated_settings)
 
+@app.route('/api/servers/<server_id>/channels/<channel_name>')
+def check_channel_exists(server_id, channel_name):
+    if not session.get('access_token'):
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    response, status_code = make_discord_request('GET', f'/guilds/{server_id}/channels')
+    
+    if not response:
+        return jsonify({'error': 'Failed to fetch channels'}), status_code or 500
+    
+    if status_code != 200:
+        return jsonify({'error': f'Discord API error: {status_code}'}), status_code
+    
+    channels = response.json()
+    channel_exists = any(ch.get('name') == channel_name and ch.get('type') == 0 for ch in channels)
+    
+    return jsonify({'exists': channel_exists})
+
 @socketio.on('connect')
 def handle_connect():
     print('Client connected')

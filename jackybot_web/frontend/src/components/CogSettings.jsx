@@ -1,11 +1,16 @@
 import { useState, useEffect } from 'react'
 import ToggleSwitch from './ToggleSwitch'
+import CogModal from './CogModal'
 import { api } from '../api/client'
 
 function CogSettings({ serverId, cogs, selectedCategory, socket }) {
   const [settings, setSettings] = useState({})
   const [loading, setLoading] = useState(true)
   const [updatingCog, setUpdatingCog] = useState(null)
+  const [selectedCog, setSelectedCog] = useState(null)
+  const [isModalOpen, setIsModalOpen] = useState(false)
+
+  const specialCogs = ['freegames', 'zen_updates', 'steamos_updates']
 
   useEffect(() => {
     if (serverId) {
@@ -56,6 +61,18 @@ function CogSettings({ serverId, cogs, selectedCategory, socket }) {
     }
   }
 
+  const handleCardClick = (cog) => {
+    if (specialCogs.includes(cog.name)) {
+      setSelectedCog(cog)
+      setIsModalOpen(true)
+    }
+  }
+
+  const closeModal = () => {
+    setIsModalOpen(false)
+    setSelectedCog(null)
+  }
+
   const filteredCogs = selectedCategory === 'All' 
     ? cogs 
     : cogs.filter(cog => cog.category === selectedCategory)
@@ -83,11 +100,15 @@ function CogSettings({ serverId, cogs, selectedCategory, socket }) {
         {filteredCogs.map((cog) => {
           const isEnabled = settings[cog.name]?.enabled ?? true
           const isUpdating = updatingCog === cog.name
+          const isSpecialCog = specialCogs.includes(cog.name)
 
           return (
             <div
               key={cog.name}
-              className="card hover:shadow-xl transition-shadow duration-200"
+              className={`card hover:shadow-xl transition-shadow duration-200 ${
+                isSpecialCog ? 'cog-card-glint cog-card-glint-clickable' : ''
+              }`}
+              onClick={() => handleCardClick(cog)}
             >
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-3">
@@ -97,11 +118,13 @@ function CogSettings({ serverId, cogs, selectedCategory, socket }) {
                     <span className="text-xs text-gray-400">{cog.category}</span>
                   </div>
                 </div>
-                <ToggleSwitch
-                  enabled={isEnabled}
-                  onChange={(newState) => handleToggle(cog.name, isEnabled)}
-                  disabled={isUpdating}
-                />
+                <div onClick={(e) => e.stopPropagation()}>
+                  <ToggleSwitch
+                    enabled={isEnabled}
+                    onChange={() => handleToggle(cog.name, isEnabled)}
+                    disabled={isUpdating}
+                  />
+                </div>
               </div>
               <p className="text-sm text-gray-400">
                 {cog.description}
@@ -115,6 +138,13 @@ function CogSettings({ serverId, cogs, selectedCategory, socket }) {
           )
         })}
       </div>
+
+      <CogModal
+        cog={selectedCog}
+        serverId={serverId}
+        isOpen={isModalOpen}
+        onClose={closeModal}
+      />
     </div>
   )
 }

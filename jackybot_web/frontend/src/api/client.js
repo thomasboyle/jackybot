@@ -73,6 +73,13 @@ export const api = {
       credentials: 'include'
     });
     return handleResponse(response);
+  },
+
+  async checkChannelExists(serverId, channelName) {
+    const response = await fetch(`${API_BASE}/servers/${serverId}/channels/${channelName}`, {
+      credentials: 'include'
+    });
+    return handleResponse(response);
   }
 };
 
