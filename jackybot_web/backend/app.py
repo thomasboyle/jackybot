@@ -44,7 +44,7 @@ socketio = SocketIO(app, cors_allowed_origins=Config.CORS_ORIGINS, async_mode='t
 
 @app.before_request
 def log_request_info():
-    if request.path.startswith('/auth'):
+    if request.path.startswith('/auth') or request.path.startswith('/api'):
         logger.info(f"Request: {request.method} {request.path}")
         logger.info(f"  Host: {request.host}, Origin: {request.headers.get('Origin')}")
         logger.info(f"  Cookies received: {list(request.cookies.keys())}")
@@ -307,7 +307,10 @@ def logout():
 
 @app.route('/api/servers')
 def get_servers():
+    logger.info(f"GET /api/servers - Session keys: {list(session.keys())}, has access_token: {bool(session.get('access_token'))}")
+    logger.info(f"  Cookies received: {list(request.cookies.keys())}")
     if not session.get('access_token'):
+        logger.warning("GET /api/servers - No access token in session")
         return jsonify({'error': 'Not authenticated'}), 401
     
     response, status_code = make_discord_request('GET', '/users/@me/guilds')
