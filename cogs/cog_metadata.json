@@ -4,7 +4,11 @@
     "display_name": "AI Chat",
     "description": "AI-powered chat using Groq API with context management. Usage: @JackyBot [message]",
     "category": "AI",
-    "icon": "🤖"
+    "icon": "🤖",
+    "clickable": true,
+    "requires_text_chat": true,
+    "required_channel": null,
+    "moderation_feature": false
   },
   {
     "name": "ai_audio",
@@ -39,105 +43,165 @@
     "display_name": "Movie Manager",
     "description": "Movie watchlist and suggestions. Usage: !movies",
     "category": "Entertainment",
-    "icon": "🎬"
+    "icon": "🎬",
+    "clickable": true,
+    "requires_text_chat": true,
+    "required_channel": null,
+    "moderation_feature": false
   },
   {
     "name": "freegames",
     "display_name": "Free Games",
     "description": "Track free game offers. Usage: !freegames. Requires channel: free-games",
     "category": "Entertainment",
-    "icon": "🎮"
+    "icon": "🎮",
+    "clickable": true,
+    "requires_text_chat": true,
+    "required_channel": "free-games",
+    "moderation_feature": false
   },
   {
     "name": "trivia",
     "display_name": "Trivia",
     "description": "Play trivia games. Usage: !trivia",
     "category": "Fun",
-    "icon": "❓"
+    "icon": "❓",
+    "clickable": true,
+    "requires_text_chat": true,
+    "required_channel": null,
+    "moderation_feature": false
   },
   {
     "name": "lovescore",
     "display_name": "Love Score",
     "description": "Calculate love compatibility. Usage: !love @user @user",
     "category": "Fun",
-    "icon": "💕"
+    "icon": "💕",
+    "clickable": true,
+    "requires_text_chat": true,
+    "required_channel": null,
+    "moderation_feature": false
   },
   {
     "name": "aura",
     "display_name": "Aura Points",
     "description": "Track aura points for users. Usage: !aura",
     "category": "Fun",
-    "icon": "✨"
+    "icon": "✨",
+    "clickable": true,
+    "requires_text_chat": true,
+    "required_channel": null,
+    "moderation_feature": false
   },
   {
     "name": "gyat",
     "display_name": "GYAT",
     "description": "GYAT meme commands. Usage: !gyat",
     "category": "Fun",
-    "icon": "😳"
+    "icon": "😳",
+    "clickable": true,
+    "requires_text_chat": true,
+    "required_channel": null,
+    "moderation_feature": false
   },
   {
     "name": "triggered",
     "display_name": "Triggered",
     "description": "Generate triggered memes. Usage: !triggered (reply to image)",
     "category": "Fun",
-    "icon": "😡"
+    "icon": "😡",
+    "clickable": true,
+    "requires_text_chat": true,
+    "required_channel": null,
+    "moderation_feature": false
   },
   {
     "name": "homelander",
     "display_name": "Homelander",
     "description": "Homelander meme generator. Usage: !homelander [text]",
     "category": "Fun",
-    "icon": "🦸"
+    "icon": "🦸",
+    "clickable": true,
+    "requires_text_chat": true,
+    "required_channel": null,
+    "moderation_feature": false
   },
   {
     "name": "server_manager",
     "display_name": "Server Manager",
     "description": "AI-powered server management and analytics. Usage: !server_manager_status",
     "category": "Management",
-    "icon": "🤖"
+    "icon": "🤖",
+    "clickable": true,
+    "requires_text_chat": true,
+    "required_channel": null,
+    "moderation_feature": true
   },
   {
     "name": "role_management",
     "display_name": "Role Manager",
     "description": "Manage server roles and permissions. Usage: !roles",
     "category": "Management",
-    "icon": "👥"
+    "icon": "👥",
+    "clickable": true,
+    "requires_text_chat": false,
+    "required_channel": null,
+    "moderation_feature": true
   },
   {
     "name": "poll",
     "display_name": "Polls",
     "description": "Create and manage polls. Usage: !poll or !p",
     "category": "Utility",
-    "icon": "📊"
+    "icon": "📊",
+    "clickable": true,
+    "requires_text_chat": true,
+    "required_channel": null,
+    "moderation_feature": false
   },
   {
     "name": "suggestions",
     "display_name": "Suggestions",
     "description": "Server suggestion system. Usage: !suggestions or !suggest",
     "category": "Utility",
-    "icon": "💡"
+    "icon": "💡",
+    "clickable": true,
+    "requires_text_chat": true,
+    "required_channel": null,
+    "moderation_feature": false
   },
   {
     "name": "highlights",
     "display_name": "Highlights",
     "description": "Highlight messages and notifications. Usage: !highlight_stats",
     "category": "Utility",
-    "icon": "⭐"
+    "icon": "⭐",
+    "clickable": true,
+    "requires_text_chat": true,
+    "required_channel": null,
+    "moderation_feature": false
   },
   {
     "name": "timezone",
     "display_name": "Timezone",
     "description": "Timezone conversion utilities. Usage: !time",
     "category": "Utility",
-    "icon": "🌍"
+    "icon": "🌍",
+    "clickable": true,
+    "requires_text_chat": true,
+    "required_channel": null,
+    "moderation_feature": false
   },
   {
     "name": "randomnumber",
     "display_name": "Random Number",
     "description": "Generate random numbers. Usage: !rand",
     "category": "Utility",
-    "icon": "🎲"
+    "icon": "🎲",
+    "clickable": true,
+    "requires_text_chat": true,
+    "required_channel": null,
+    "moderation_feature": false
   },
   {
     "name": "context_manager",
@@ -151,28 +215,44 @@
     "display_name": "Punisher",
     "description": "Moderation and punishment system. Usage: !punisher [text]",
     "category": "Moderation",
-    "icon": "🔨"
+    "icon": "🔨",
+    "clickable": true,
+    "requires_text_chat": true,
+    "required_channel": null,
+    "moderation_feature": true
   },
   {
     "name": "zen_updates",
     "display_name": "Zen Updates",
     "description": "Zen browser update notifications. Automatic - no command needed. Requires channel: zen-updates",
     "category": "Updates",
-    "icon": "🌟"
+    "icon": "🌟",
+    "clickable": true,
+    "requires_text_chat": true,
+    "required_channel": "zen-updates",
+    "moderation_feature": false
   },
   {
     "name": "steamos_updates",
     "display_name": "SteamOS Updates",
     "description": "SteamOS update notifications. Usage: !steamos_latest. Requires channel: steamos-updates",
     "category": "Updates",
-    "icon": "🎮"
+    "icon": "🎮",
+    "clickable": true,
+    "requires_text_chat": true,
+    "required_channel": "steamos-updates",
+    "moderation_feature": false
   },
   {
     "name": "help",
     "display_name": "Help",
     "description": "Bot help and command information. Usage: !help",
     "category": "Utility",
-    "icon": "❔"
+    "icon": "❔",
+    "clickable": true,
+    "requires_text_chat": true,
+    "required_channel": null,
+    "moderation_feature": false
   }
 ]
 

@@ -153,6 +153,10 @@ def make_discord_request(method, endpoint, **kwargs):
     
     headers = kwargs.get('headers', {})
     headers['Authorization'] = f'Bearer {access_token}'
+    
+    if 'json' in kwargs:
+        headers['Content-Type'] = 'application/json'
+    
     kwargs['headers'] = headers
     
     try:
@@ -382,6 +386,78 @@ def update_server_settings(server_id):
 @socketio.on('connect')
 def handle_connect():
     print('Client connected')
+
+@app.route('/api/servers/<server_id>/channels')
+def get_server_channels(server_id):
+    if not session.get('access_token'):
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    response, status_code = make_discord_request('GET', f'/guilds/{server_id}/channels')
+    
+    if not response:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    if status_code != 200:
+        return jsonify({'error': f'Discord API error: {status_code}'}), status_code
+    
+    channels = response.json()
+    text_channels = [ch for ch in channels if ch.get('type') == 0]
+    
+    return jsonify(text_channels)
+
+@app.route('/api/servers/<server_id>/roles')
+def get_server_roles(server_id):
+    if not session.get('access_token'):
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    response, status_code = make_discord_request('GET', f'/guilds/{server_id}/roles')
+    
+    if not response:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    if status_code != 200:
+        return jsonify({'error': f'Discord API error: {status_code}'}), status_code
+    
+    roles = response.json()
+    return jsonify(roles)
+
+@app.route('/api/servers/<server_id>/cogs/<cog_name>/execute', methods=['POST'])
+def execute_cog_action(server_id, cog_name):
+    if not session.get('access_token'):
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    data = request.json
+    action_type = data.get('action_type')
+    
+    if cog_name == 'role_management':
+        if action_type == 'update_auto_roles':
+            role_ids = data.get('role_ids', [])
+            return jsonify({'success': True, 'message': 'Auto-roles updated. Note: This requires bot integration to take effect.'})
+        elif action_type == 'bulk_add_role':
+            role_id = data.get('role_id')
+            return jsonify({'success': True, 'message': 'Bulk role addition initiated. Note: This requires bot integration to take effect.'})
+        elif action_type == 'bulk_remove_role':
+            role_id = data.get('role_id')
+            return jsonify({'success': True, 'message': 'Bulk role removal initiated. Note: This requires bot integration to take effect.'})
+    
+    elif action_type == 'send_message':
+        channel_id = data.get('channel_id')
+        message = data.get('message')
+        
+        if not channel_id or not message:
+            return jsonify({'error': 'Missing channel_id or message'}), 400
+        
+        response, status_code = make_discord_request('POST', f'/channels/{channel_id}/messages', json={'content': message})
+        
+        if not response:
+            return jsonify({'error': 'Failed to send message'}), 500
+        
+        if status_code not in [200, 201]:
+            return jsonify({'error': f'Discord API error: {status_code}'}), status_code
+        
+        return jsonify({'success': True, 'message': 'Message sent successfully'})
+    
+    return jsonify({'error': 'Invalid action type'}), 400
 
 @socketio.on('disconnect')
 def handle_disconnect():
