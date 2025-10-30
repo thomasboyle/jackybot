@@ -106,7 +106,7 @@ def login():
         'client_id': Config.DISCORD_CLIENT_ID,
         'redirect_uri': Config.DISCORD_REDIRECT_URI,
         'response_type': 'code',
-        'scope': 'identify guilds',
+        'scope': 'identify email',
         'state': state
     }
     
