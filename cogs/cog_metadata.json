@@ -2,7 +2,7 @@
   {
     "name": "groq_chat",
     "display_name": "AI Chat",
-    "description": "AI-powered chat using Groq API with context management. Usage: @JackyBot [message]",
+    "description": "AI-powered chat using Groq API with context management.\nUsage: @JackyBot [message]",
     "category": "AI",
     "icon": "🤖",
     "clickable": true,
@@ -13,35 +13,35 @@
   {
     "name": "ai_audio",
     "display_name": "AI Audio",
-    "description": "AI audio generation and processing. Usage: !music [prompt]",
+    "description": "AI audio generation and processing.\nUsage: !music [prompt]",
     "category": "AI",
     "icon": "🎵"
   },
   {
     "name": "voice_chat",
     "display_name": "Voice Chat",
-    "description": "Voice chat integration and management. Usage: !voice_chat or !vc",
+    "description": "Voice chat integration and management.\nUsage: !voice_chat or !vc",
     "category": "Voice",
     "icon": "🎤"
   },
   {
     "name": "record",
     "display_name": "Voice Recording",
-    "description": "Record voice channels. Usage: !record, !stop",
+    "description": "Record voice channels.\nUsage: !record, !stop",
     "category": "Voice",
     "icon": "⏺️"
   },
   {
     "name": "music_wavelink",
     "display_name": "Music Player",
-    "description": "Play music using Wavelink. Usage: !play [query], !skip",
+    "description": "Play music using Wavelink.\nUsage: !play [query], !skip",
     "category": "Music",
     "icon": "🎶"
   },
   {
     "name": "movies",
     "display_name": "Movie Manager",
-    "description": "Movie watchlist and suggestions. Usage: !movies",
+    "description": "Movie watchlist and suggestions.\nUsage: !movies",
     "category": "Entertainment",
     "icon": "🎬",
     "clickable": true,
@@ -52,7 +52,7 @@
   {
     "name": "freegames",
     "display_name": "Free Games",
-    "description": "Track free game offers. Usage: !freegames. Requires channel: free-games",
+    "description": "Track free game offers.\nUsage: !freegames\nRequires channel: free-games",
     "category": "Entertainment",
     "icon": "🎮",
     "clickable": true,
@@ -63,7 +63,7 @@
   {
     "name": "trivia",
     "display_name": "Trivia",
-    "description": "Play trivia games. Usage: !trivia",
+    "description": "Play trivia games.\nUsage: !trivia",
     "category": "Fun",
     "icon": "❓",
     "clickable": true,
@@ -74,7 +74,7 @@
   {
     "name": "lovescore",
     "display_name": "Love Score",
-    "description": "Calculate love compatibility. Usage: !love @user @user",
+    "description": "Calculate love compatibility.\nUsage: !love @user @user",
     "category": "Fun",
     "icon": "💕",
     "clickable": true,
@@ -85,7 +85,7 @@
   {
     "name": "aura",
     "display_name": "Aura Points",
-    "description": "Track aura points for users. Usage: !aura",
+    "description": "Track aura points for users.\nUsage: !aura",
     "category": "Fun",
     "icon": "✨",
     "clickable": true,
@@ -96,7 +96,7 @@
   {
     "name": "gyat",
     "display_name": "GYAT",
-    "description": "GYAT meme commands. Usage: !gyat",
+    "description": "GYAT meme commands.\nUsage: !gyat",
     "category": "Fun",
     "icon": "😳",
     "clickable": true,
@@ -107,7 +107,7 @@
   {
     "name": "triggered",
     "display_name": "Triggered",
-    "description": "Generate triggered memes. Usage: !triggered (reply to image)",
+    "description": "Generate triggered memes.\nUsage: !triggered (reply to image)",
     "category": "Fun",
     "icon": "😡",
     "clickable": true,
@@ -118,7 +118,7 @@
   {
     "name": "homelander",
     "display_name": "Homelander",
-    "description": "Homelander meme generator. Usage: !homelander [text]",
+    "description": "Homelander meme generator.\nUsage: !homelander [text]",
     "category": "Fun",
     "icon": "🦸",
     "clickable": true,
@@ -129,7 +129,7 @@
   {
     "name": "server_manager",
     "display_name": "Server Manager",
-    "description": "AI-powered server management and analytics. Usage: !server_manager_status",
+    "description": "AI-powered server management and analytics.\nUsage: !server_manager_status",
     "category": "Management",
     "icon": "🤖",
     "clickable": true,
@@ -140,7 +140,7 @@
   {
     "name": "role_management",
     "display_name": "Role Manager",
-    "description": "Manage server roles and permissions. Usage: !roles",
+    "description": "Manage server roles and permissions.\nUsage: !roles",
     "category": "Management",
     "icon": "👥",
     "clickable": true,
@@ -151,7 +151,7 @@
   {
     "name": "poll",
     "display_name": "Polls",
-    "description": "Create and manage polls. Usage: !poll or !p",
+    "description": "Create and manage polls.\nUsage: !poll or !p",
     "category": "Utility",
     "icon": "📊",
     "clickable": true,
@@ -162,7 +162,7 @@
   {
     "name": "suggestions",
     "display_name": "Suggestions",
-    "description": "Server suggestion system. Usage: !suggestions or !suggest",
+    "description": "Server suggestion system.\nUsage: !suggestions or !suggest",
     "category": "Utility",
     "icon": "💡",
     "clickable": true,
@@ -173,7 +173,7 @@
   {
     "name": "highlights",
     "display_name": "Highlights",
-    "description": "Highlight messages and notifications. Usage: !highlight_stats",
+    "description": "Highlight messages and notifications.\nUsage: !highlight_stats",
     "category": "Utility",
     "icon": "⭐",
     "clickable": true,
@@ -184,7 +184,7 @@
   {
     "name": "timezone",
     "display_name": "Timezone",
-    "description": "Timezone conversion utilities. Usage: !time",
+    "description": "Timezone conversion utilities.\nUsage: !time",
     "category": "Utility",
     "icon": "🌍",
     "clickable": true,
@@ -195,7 +195,7 @@
   {
     "name": "randomnumber",
     "display_name": "Random Number",
-    "description": "Generate random numbers. Usage: !rand",
+    "description": "Generate random numbers.\nUsage: !rand",
     "category": "Utility",
     "icon": "🎲",
     "clickable": true,
@@ -206,14 +206,14 @@
   {
     "name": "context_manager",
     "display_name": "Context Manager",
-    "description": "Manage AI conversation context. Background service - no command needed",
+    "description": "Manage AI conversation context.\nBackground service - no command needed",
     "category": "Utility",
     "icon": "📝"
   },
   {
     "name": "punisher",
     "display_name": "Punisher",
-    "description": "Moderation and punishment system. Usage: !punisher [text]",
+    "description": "Moderation and punishment system.\nUsage: !punisher [text]",
     "category": "Moderation",
     "icon": "🔨",
     "clickable": true,
@@ -224,7 +224,7 @@
   {
     "name": "zen_updates",
     "display_name": "Zen Updates",
-    "description": "Zen browser update notifications. Automatic - no command needed. Requires channel: zen-updates",
+    "description": "Zen browser update notifications.\nAutomatic - no command needed\nRequires channel: zen-updates",
     "category": "Updates",
     "icon": "🌟",
     "clickable": true,
@@ -235,7 +235,7 @@
   {
     "name": "steamos_updates",
     "display_name": "SteamOS Updates",
-    "description": "SteamOS update notifications. Usage: !steamos_latest. Requires channel: steamos-updates",
+    "description": "SteamOS update notifications.\nUsage: !steamos_latest\nRequires channel: steamos-updates",
     "category": "Updates",
     "icon": "🎮",
     "clickable": true,
@@ -246,7 +246,7 @@
   {
     "name": "help",
     "display_name": "Help",
-    "description": "Bot help and command information. Usage: !help",
+    "description": "Bot help and command information.\nUsage: !help",
     "category": "Utility",
     "icon": "❔",
     "clickable": true,
