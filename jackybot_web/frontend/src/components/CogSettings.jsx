@@ -1,15 +1,11 @@
 import { useState, useEffect } from 'react'
 import ToggleSwitch from './ToggleSwitch'
-import RoleManagementModal from './RoleManagementModal'
-import TextChatModal from './TextChatModal'
 import { api } from '../api/client'
 
 function CogSettings({ serverId, cogs, selectedCategory, socket }) {
   const [settings, setSettings] = useState({})
   const [loading, setLoading] = useState(true)
   const [updatingCog, setUpdatingCog] = useState(null)
-  const [selectedCog, setSelectedCog] = useState(null)
-  const [modals, setModals] = useState({ roleManagement: false, textChat: false })
 
   useEffect(() => {
     if (serverId) {
@@ -44,23 +40,6 @@ function CogSettings({ serverId, cogs, selectedCategory, socket }) {
       setLoading(false)
     }
   }
-
-  const handleCogClick = (cog) => {
-    if (!cog.clickable) return;
-
-    if (cog.moderation_feature && !cog.requires_text_chat) {
-      setSelectedCog(cog);
-      setModals({ roleManagement: true, textChat: false });
-    } else if (cog.requires_text_chat || cog.moderation_feature) {
-      setSelectedCog(cog);
-      setModals({ roleManagement: false, textChat: true });
-    }
-  };
-
-  const closeModals = () => {
-    setModals({ roleManagement: false, textChat: false });
-    setSelectedCog(null);
-  };
 
   const handleToggle = async (cogName, currentState) => {
     setUpdatingCog(cogName)
@@ -108,10 +87,7 @@ function CogSettings({ serverId, cogs, selectedCategory, socket }) {
           return (
             <div
               key={cog.name}
-              className={`card hover:shadow-xl transition-shadow duration-200 ${
-                cog.clickable ? 'cursor-pointer' : ''
-              }`}
-              onClick={() => handleCogClick(cog)}
+              className="card hover:shadow-xl transition-shadow duration-200"
             >
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-3">
@@ -121,13 +97,11 @@ function CogSettings({ serverId, cogs, selectedCategory, socket }) {
                     <span className="text-xs text-gray-400">{cog.category}</span>
                   </div>
                 </div>
-                <div onClick={(e) => e.stopPropagation()}>
-                  <ToggleSwitch
-                    enabled={isEnabled}
-                    onChange={(newState) => handleToggle(cog.name, isEnabled)}
-                    disabled={isUpdating}
-                  />
-                </div>
+                <ToggleSwitch
+                  enabled={isEnabled}
+                  onChange={(newState) => handleToggle(cog.name, isEnabled)}
+                  disabled={isUpdating}
+                />
               </div>
               <p className="text-sm text-gray-400">
                 {cog.description}
@@ -141,27 +115,6 @@ function CogSettings({ serverId, cogs, selectedCategory, socket }) {
           )
         })}
       </div>
-
-      {selectedCog && (
-        <>
-          {modals.roleManagement && (
-            <RoleManagementModal
-              isOpen={modals.roleManagement}
-              onClose={closeModals}
-              serverId={serverId}
-              cog={selectedCog}
-            />
-          )}
-          {modals.textChat && (
-            <TextChatModal
-              isOpen={modals.textChat}
-              onClose={closeModals}
-              serverId={serverId}
-              cog={selectedCog}
-            />
-          )}
-        </>
-      )}
     </div>
   )
 }
