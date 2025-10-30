@@ -36,7 +36,7 @@ function VerticalNav({ cogs, selectedCategory, onSelectCategory }) {
   return (
     <div className="w-64 bg-dark-light min-h-screen p-4 border-r border-dark-lighter">
       <div className="mb-8">
-        <h2 className="text-2xl font-bold bg-gradient-to-r from-primary to-gold bg-clip-text text-transparent">
+        <h2 className="text-2xl font-bold" style={{ color: '#EFBF04' }}>
           JackyBot
         </h2>
         <p className="text-sm text-gray-400 mt-1">Configuration Panel</p>

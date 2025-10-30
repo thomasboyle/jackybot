@@ -14,7 +14,7 @@ function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-dark via-dark-light to-dark">
       <div className="card max-w-md w-full mx-4 text-center space-y-6">
         <div className="space-y-2">
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-gold bg-clip-text text-transparent">
+          <h1 className="text-4xl font-bold" style={{ color: '#EFBF04' }}>
             JackyBot
           </h1>
           <p className="text-xl text-gray-300">Web Interface</p>
