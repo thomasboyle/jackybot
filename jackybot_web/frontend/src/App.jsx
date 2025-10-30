@@ -20,6 +20,10 @@ function App() {
       setIsAuthenticated(true)
     } catch (error) {
       setIsAuthenticated(false)
+      setUser(null)
+      if (error.status === 401) {
+        console.warn('Session expired or not authenticated')
+      }
     } finally {
       setIsLoading(false)
     }

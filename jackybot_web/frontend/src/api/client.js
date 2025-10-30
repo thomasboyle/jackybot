@@ -1,29 +1,44 @@
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 const AUTH_BASE = import.meta.env.VITE_AUTH_BASE || '/auth';
 
+async function handleResponse(response) {
+  if (!response.ok) {
+    let errorMessage = `Request failed with status ${response.status}`;
+    try {
+      const errorData = await response.json();
+      if (errorData.error) {
+        errorMessage = errorData.error;
+      }
+    } catch (e) {
+      // If response is not JSON, use default message
+    }
+    const error = new Error(errorMessage);
+    error.status = response.status;
+    throw error;
+  }
+  return response.json();
+}
+
 export const api = {
   async getCogs() {
     const response = await fetch(`${API_BASE}/cogs`, {
       credentials: 'include'
     });
-    if (!response.ok) throw new Error('Failed to fetch cogs');
-    return response.json();
+    return handleResponse(response);
   },
 
   async getServers() {
     const response = await fetch(`${API_BASE}/servers`, {
       credentials: 'include'
     });
-    if (!response.ok) throw new Error('Failed to fetch servers');
-    return response.json();
+    return handleResponse(response);
   },
 
   async getServerSettings(serverId) {
     const response = await fetch(`${API_BASE}/servers/${serverId}/settings`, {
       credentials: 'include'
     });
-    if (!response.ok) throw new Error('Failed to fetch server settings');
-    return response.json();
+    return handleResponse(response);
   },
 
   async updateServerSettings(serverId, cogName, enabled) {
@@ -35,24 +50,21 @@ export const api = {
       credentials: 'include',
       body: JSON.stringify({ cog_name: cogName, enabled })
     });
-    if (!response.ok) throw new Error('Failed to update settings');
-    return response.json();
+    return handleResponse(response);
   },
 
   async getLoginUrl() {
     const response = await fetch(`${AUTH_BASE}/login`, {
       credentials: 'include'
     });
-    if (!response.ok) throw new Error('Failed to get login URL');
-    return response.json();
+    return handleResponse(response);
   },
 
   async getCurrentUser() {
     const response = await fetch(`${AUTH_BASE}/user`, {
       credentials: 'include'
     });
-    if (!response.ok) throw new Error('Not authenticated');
-    return response.json();
+    return handleResponse(response);
   },
 
   async logout() {
@@ -60,8 +72,7 @@ export const api = {
       method: 'POST',
       credentials: 'include'
     });
-    if (!response.ok) throw new Error('Failed to logout');
-    return response.json();
+    return handleResponse(response);
   }
 };
 

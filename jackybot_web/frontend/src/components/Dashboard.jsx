@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { io } from 'socket.io-client'
 import VerticalNav from './VerticalNav'
 import ServerSelector from './ServerSelector'
@@ -6,6 +7,7 @@ import CogSettings from './CogSettings'
 import { api } from '../api/client'
 
 function Dashboard({ user, onLogout }) {
+  const navigate = useNavigate()
   const [servers, setServers] = useState([])
   const [selectedServer, setSelectedServer] = useState(null)
   const [cogs, setCogs] = useState([])
@@ -50,6 +52,10 @@ function Dashboard({ user, onLogout }) {
       }
     } catch (error) {
       console.error('Failed to load data:', error)
+      if (error.status === 401) {
+        console.warn('Authentication failed, redirecting to login')
+        navigate('/login')
+      }
     } finally {
       setLoading(false)
     }
