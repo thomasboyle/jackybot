@@ -20,15 +20,13 @@ function VerticalNav({ cogs, selectedCategory, onSelectCategory }) {
 
   const getCategoryIcon = (category) => {
     const iconMap = {
+      'Recently Updated': '🆕',
       'AI': '🤖',
       'Voice': '🎤',
       'Music': '🎶',
-      'Entertainment': '🎬',
+      'Text Channels': '📝',
       'Fun': '🎉',
-      'Management': '⚙️',
-      'Utility': '🔧',
-      'Moderation': '🔨',
-      'Updates': '📢'
+      'Utilities': '🔧'
     }
     return iconMap[category] || '📦'
   }

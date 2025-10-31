@@ -3,7 +3,7 @@
     "name": "groq_chat",
     "display_name": "AI Chat",
     "description": "AI-powered chat using Groq API with context management. Usage: @JackyBot [message]",
-    "category": "AI",
+    "category": "Recently Updated",
     "icon": "🤖"
   },
   {
@@ -31,21 +31,21 @@
     "name": "music_wavelink",
     "display_name": "Music Player",
     "description": "Play music using Wavelink. Usage: !play [query], !skip",
-    "category": "Music",
+    "category": "Recently Updated",
     "icon": "🎶"
   },
   {
     "name": "movies",
     "display_name": "Movie Manager",
     "description": "Movie watchlist and suggestions. Usage: !movies",
-    "category": "Entertainment",
+    "category": "Fun",
     "icon": "🎬"
   },
   {
     "name": "freegames",
     "display_name": "Free Games",
     "description": "Track free game offers. Usage: !freegames. Requires channel: free-games",
-    "category": "Entertainment",
+    "category": "Text Channels",
     "icon": "🎮"
   },
   {
@@ -94,84 +94,84 @@
     "name": "server_manager",
     "display_name": "Server Manager",
     "description": "AI-powered server management and analytics. Usage: !server_manager_status",
-    "category": "Management",
+    "category": "Utilities",
     "icon": "🤖"
   },
   {
     "name": "role_management",
     "display_name": "Role Manager",
     "description": "Manage server roles and permissions. Usage: !roles",
-    "category": "Management",
+    "category": "Utilities",
     "icon": "👥"
   },
   {
     "name": "poll",
     "display_name": "Polls",
     "description": "Create and manage polls. Usage: !poll or !p",
-    "category": "Utility",
+    "category": "Utilities",
     "icon": "📊"
   },
   {
     "name": "suggestions",
     "display_name": "Suggestions",
     "description": "Server suggestion system. Usage: !suggestions or !suggest",
-    "category": "Utility",
+    "category": "Utilities",
     "icon": "💡"
   },
   {
     "name": "highlights",
     "display_name": "Highlights",
     "description": "Highlight messages and notifications. Usage: !highlight_stats",
-    "category": "Utility",
+    "category": "Text Channels",
     "icon": "⭐"
   },
   {
     "name": "timezone",
     "display_name": "Timezone",
     "description": "Timezone conversion utilities. Usage: !time",
-    "category": "Utility",
+    "category": "Utilities",
     "icon": "🌍"
   },
   {
     "name": "randomnumber",
     "display_name": "Random Number",
     "description": "Generate random numbers. Usage: !rand",
-    "category": "Utility",
+    "category": "Utilities",
     "icon": "🎲"
   },
   {
     "name": "context_manager",
     "display_name": "Context Manager",
     "description": "Manage AI conversation context. Background service - no command needed",
-    "category": "Utility",
+    "category": "Utilities",
     "icon": "📝"
   },
   {
     "name": "punisher",
     "display_name": "Punisher",
     "description": "Moderation and punishment system. Usage: !punisher [text]",
-    "category": "Moderation",
+    "category": "Fun",
     "icon": "🔨"
   },
   {
     "name": "zen_updates",
     "display_name": "Zen Updates",
     "description": "Zen browser update notifications. Automatic - no command needed. Requires channel: zen-updates",
-    "category": "Updates",
+    "category": "Text Channels",
     "icon": "🌟"
   },
   {
     "name": "steamos_updates",
     "display_name": "SteamOS Updates",
     "description": "SteamOS update notifications. Usage: !steamos_latest. Requires channel: steamos-updates",
-    "category": "Updates",
+    "category": "Text Channels",
     "icon": "🎮"
   },
   {
     "name": "help",
     "display_name": "Help",
     "description": "Bot help and command information. Usage: !help",
-    "category": "Utility",
+    "category": "Utilities",
     "icon": "❔"
   }
 ]
