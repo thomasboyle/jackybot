@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import jackybotTitle from '../../../assets/images/jackybot_title.png'
+import jackybotTitle from '../../../../assets/images/jackybot_title.png'
 
 function VerticalNav({ cogs, selectedCategory, onSelectCategory }) {
   const [categories, setCategories] = useState([])
