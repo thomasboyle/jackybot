@@ -6,7 +6,7 @@ function ToggleSwitch({ enabled, onChange, disabled = false }) {
       className={`
         relative inline-flex h-8 w-14 items-center rounded-full
         transition-colors duration-300 ease-in-out
-        ${enabled ? '' : 'bg-gray-600'}
+        ${enabled ? '' : 'bg-red-600'}
         ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:opacity-90'}
       `}
       style={enabled ? { backgroundColor: '#EFBF04' } : {}}
