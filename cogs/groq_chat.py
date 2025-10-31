@@ -52,6 +52,8 @@ class GroqChat(commands.Cog):
                 max_retries=0
             )
         self.model = "openai/gpt-oss-120b"
+        self.reasoning_effort = "low"
+        self.tools = [{"type": "browser_search"}, {"type": "code_interpreter"}]
 
         self.system_prompt = None
 
@@ -223,7 +225,11 @@ class GroqChat(commands.Cog):
                     lambda: self.groq_client.chat.completions.create(
                         model=self.model,
                         messages=messages,
-                        max_tokens=512
+                        max_completion_tokens=512,
+                        reasoning_effort=self.reasoning_effort,
+                        stream=False,
+                        stop=None,
+                        tools=self.tools
                     )
                 )
                 return completion.choices[0].message.content
