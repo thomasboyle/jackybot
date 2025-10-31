@@ -11,22 +11,30 @@ function VerticalNav({ cogs, selectedCategory, onSelectCategory }) {
         count: cogs.filter(c => c.category === cat).length,
         icon: getCategoryIcon(cat)
       }))
+
+      // Sort categories with Recently Updated first, then alphabetically
+      const sortedCategories = categoriesWithCounts.sort((a, b) => {
+        if (a.name === 'Recently Updated') return -1
+        if (b.name === 'Recently Updated') return 1
+        return a.name.localeCompare(b.name)
+      })
+
       setCategories([
         { name: 'All', count: cogs.length, icon: '📋' },
-        ...categoriesWithCounts
+        ...sortedCategories
       ])
     }
   }, [cogs])
 
   const getCategoryIcon = (category) => {
     const iconMap = {
-      'Recently Updated': '🆕',
+      'Recently Updated': '✨',
       'AI': '🤖',
       'Voice': '🎤',
       'Music': '🎶',
-      'Text Channels': '📝',
+      'Text Channels': '📜',
       'Fun': '🎉',
-      'Utilities': '🔧'
+      'Utilities': '🛠️'
     }
     return iconMap[category] || '📦'
   }

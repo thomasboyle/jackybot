@@ -105,8 +105,8 @@ function CogSettings({ serverId, cogs, selectedCategory, socket }) {
           return (
             <div
               key={cog.name}
-              className={`card hover:shadow-xl transition-shadow duration-200 ${
-                isSpecialCog ? 'cog-card-glint cog-card-glint-clickable' : ''
+              className={`card hover:shadow-xl transition-shadow duration-200 cog-card-glint ${
+                isSpecialCog ? 'cog-card-glint-clickable' : ''
               }`}
               onClick={() => handleCardClick(cog)}
             >
