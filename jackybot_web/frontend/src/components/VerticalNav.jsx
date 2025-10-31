@@ -46,7 +46,7 @@ function VerticalNav({ cogs, selectedCategory, onSelectCategory }) {
         <img
           src={jackybotTitle}
           alt="JackyBot"
-          className="h-8 w-auto"
+          className="w-full h-auto"
         />
         <p className="text-sm text-gray-400 mt-1">Web UI</p>
       </div>
