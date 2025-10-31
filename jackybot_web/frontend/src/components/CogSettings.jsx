@@ -110,13 +110,10 @@ function CogSettings({ serverId, cogs, selectedCategory, socket }) {
               }`}
               onClick={() => handleCardClick(cog)}
             >
-              <div className="flex items-start justify-between mb-3">
+              <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-3">
                   <span className="text-3xl">{cog.icon}</span>
-                  <div>
-                    <h3 className="font-semibold text-lg">{cog.display_name}</h3>
-                    <span className="text-xs text-gray-400">{cog.category}</span>
-                  </div>
+                  <h3 className="font-semibold text-lg">{cog.display_name}</h3>
                 </div>
                 <div onClick={(e) => e.stopPropagation()}>
                   <ToggleSwitch
@@ -126,9 +123,34 @@ function CogSettings({ serverId, cogs, selectedCategory, socket }) {
                   />
                 </div>
               </div>
-              <p className="text-sm text-gray-400">
-                {cog.description}
-              </p>
+
+              <div className="ml-11 mb-3">
+                <span className="text-xs text-gray-400">{cog.category}</span>
+              </div>
+
+              {(() => {
+                const usageIndex = cog.description.indexOf('Usage:')
+                if (usageIndex !== -1) {
+                  const mainDesc = cog.description.substring(0, usageIndex).trim()
+                  const usageDesc = cog.description.substring(usageIndex).trim()
+                  return (
+                    <>
+                      <p className="text-sm text-gray-400 mb-2">
+                        {mainDesc}
+                      </p>
+                      <p className="text-sm font-semibold text-gray-300">
+                        {usageDesc}
+                      </p>
+                    </>
+                  )
+                } else {
+                  return (
+                    <p className="text-sm text-gray-400">
+                      {cog.description}
+                    </p>
+                  )
+                }
+              })()}
               {isUpdating && (
                 <div className="mt-2 text-xs text-primary animate-pulse">
                   Updating...
