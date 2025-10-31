@@ -73,8 +73,10 @@ function CogSettings({ serverId, cogs, selectedCategory, socket }) {
     setSelectedCog(null)
   }
 
-  const filteredCogs = selectedCategory === 'All' 
-    ? cogs 
+  const filteredCogs = selectedCategory === 'All'
+    ? cogs.filter((cog, index, self) =>
+        index === self.findIndex(c => c.name === cog.name)
+      )
     : cogs.filter(cog => cog.category === selectedCategory)
 
   if (loading) {
@@ -113,19 +115,23 @@ function CogSettings({ serverId, cogs, selectedCategory, socket }) {
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-3">
                   <span className="text-3xl">{cog.icon}</span>
-                  <h3 className="font-semibold text-lg">{cog.display_name}</h3>
+                  <div>
+                    <h3 className="font-semibold text-lg">{cog.display_name}</h3>
+                    <span className="text-xs text-gray-400">{cog.category}</span>
+                  </div>
                 </div>
-                <div onClick={(e) => e.stopPropagation()}>
+                <div onClick={(e) => e.stopPropagation()} className="relative group">
                   <ToggleSwitch
                     enabled={isEnabled}
                     onChange={() => handleToggle(cog.name, isEnabled)}
                     disabled={isUpdating}
                   />
+                  <div className="absolute right-full mr-2 top-1/2 transform -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10">
+                    <div className="bg-gray-800 text-white text-xs px-2 py-1 rounded whitespace-nowrap">
+                      {isEnabled ? 'Module enabled' : 'Module disabled'}
+                    </div>
+                  </div>
                 </div>
-              </div>
-
-              <div className="ml-11 mb-3">
-                <span className="text-xs text-gray-400">{cog.category}</span>
               </div>
 
               {(() => {
