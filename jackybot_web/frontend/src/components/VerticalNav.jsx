@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import jackybotTitle from '../../../assets/images/jackybot_title.png'
 
 function VerticalNav({ cogs, selectedCategory, onSelectCategory }) {
   const [categories, setCategories] = useState([])
@@ -42,10 +43,12 @@ function VerticalNav({ cogs, selectedCategory, onSelectCategory }) {
   return (
     <div className="w-64 bg-dark-light min-h-screen p-4 border-r border-dark-lighter">
       <div className="mb-8">
-        <h2 className="text-2xl font-bold" style={{ color: '#EFBF04' }}>
-          JackyBot
-        </h2>
-        <p className="text-sm text-gray-400 mt-1">Configuration Panel</p>
+        <img
+          src={jackybotTitle}
+          alt="JackyBot"
+          className="h-8 w-auto"
+        />
+        <p className="text-sm text-gray-400 mt-1">Web UI</p>
       </div>
 
       <nav className="space-y-2">
