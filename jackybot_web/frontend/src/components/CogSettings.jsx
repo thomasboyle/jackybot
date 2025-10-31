@@ -10,7 +10,7 @@ function CogSettings({ serverId, cogs, selectedCategory, socket }) {
   const [selectedCog, setSelectedCog] = useState(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
 
-  const specialCogs = ['freegames', 'zen_updates', 'steamos_updates']
+  const specialCogs = ['freegames', 'zen_updates', 'steamos_updates', 'highlights']
 
   useEffect(() => {
     if (serverId) {

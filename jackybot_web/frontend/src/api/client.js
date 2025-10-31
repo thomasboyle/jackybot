@@ -80,6 +80,32 @@ export const api = {
       credentials: 'include'
     });
     return handleResponse(response);
+  },
+
+  async getServerChannels(serverId) {
+    const response = await fetch(`${API_BASE}/servers/${serverId}/channels`, {
+      credentials: 'include'
+    });
+    return handleResponse(response);
+  },
+
+  async getHighlightsChannel(serverId) {
+    const response = await fetch(`${API_BASE}/servers/${serverId}/cogs/highlights/channel`, {
+      credentials: 'include'
+    });
+    return handleResponse(response);
+  },
+
+  async setHighlightsChannel(serverId, channelName) {
+    const response = await fetch(`${API_BASE}/servers/${serverId}/cogs/highlights/channel`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify({ channel_name: channelName })
+    });
+    return handleResponse(response);
   }
 };
 

@@ -8,9 +8,9 @@ import os
 class HighlightsCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.highlight_channel_name = "teli-highlights"
         self.star_emoji = "⭐"
         self.data_file = 'data/highlights_data.json'
+        self.settings_file = os.environ.get('COG_SETTINGS_PATH', 'data/cog_settings.json')
         self.highlighted_messages = set()
         self._image_extensions = ('.png', '.jpg', '.jpeg', '.gif', '.webp')
         self._video_extensions = ('.mp4', '.mov', '.avi', '.webm')
@@ -41,15 +41,33 @@ class HighlightsCog(commands.Cog):
         except Exception as e:
             print(f"Error saving highlights data: {e}")
 
+    def get_highlight_channel_name(self, guild_id):
+        """Get the configured highlight channel name for a server."""
+        try:
+            if os.path.exists(self.settings_file):
+                with open(self.settings_file, 'r') as f:
+                    settings = json.load(f)
+                    server_settings = settings.get(str(guild_id), {})
+                    highlights_settings = server_settings.get('highlights', {})
+                    channel_name = highlights_settings.get('channel_name')
+                    if channel_name:
+                        return channel_name
+        except Exception as e:
+            print(f"Error reading highlights channel setting: {e}")
+
+        # Default fallback
+        return "teli-highlights"
+
     async def get_highlight_channel(self, guild):
         """Get or create the highlights channel."""
-        highlight_channel = discord.utils.get(guild.channels, name=self.highlight_channel_name)
-        
+        channel_name = self.get_highlight_channel_name(guild.id)
+        highlight_channel = discord.utils.get(guild.channels, name=channel_name)
+
         if not highlight_channel:
             try:
                 # Create the channel if it doesn't exist
                 highlight_channel = await guild.create_text_channel(
-                    self.highlight_channel_name,
+                    channel_name,
                     topic="⭐ Highlighted messages from the server"
                 )
                 await highlight_channel.send("✨ **Welcome to the highlights channel!** ✨\nMessages starred with ⭐ will appear here.")
@@ -59,7 +77,7 @@ class HighlightsCog(commands.Cog):
             except Exception as e:
                 print(f"Error creating highlights channel: {e}")
                 return None
-        
+
         return highlight_channel
 
     def format_message_content(self, message):
@@ -155,7 +173,8 @@ class HighlightsCog(commands.Cog):
         message = reaction.message
         
         # Don't highlight messages from the highlights channel itself
-        if message.channel.name == self.highlight_channel_name:
+        highlight_channel_name = self.get_highlight_channel_name(message.guild.id)
+        if message.channel.name == highlight_channel_name:
             return
         
         # Check if message was already highlighted
@@ -195,13 +214,14 @@ class HighlightsCog(commands.Cog):
         guild_id_str = str(ctx.guild.id)
         guild_highlights = [msg_id for msg_id in self.highlighted_messages if msg_id.startswith(guild_id_str)]
         
+        highlight_channel_name = self.get_highlight_channel_name(ctx.guild.id)
         embed = discord.Embed(
             title="⭐ Highlight Statistics",
             description=f"This server has **{len(guild_highlights)}** highlighted messages",
             color=0xFFD700
         )
-        
-        highlight_channel = discord.utils.get(ctx.guild.channels, name=self.highlight_channel_name)
+
+        highlight_channel = discord.utils.get(ctx.guild.channels, name=highlight_channel_name)
         if highlight_channel:
             embed.add_field(
                 name="📍 Highlights Channel",
@@ -211,7 +231,7 @@ class HighlightsCog(commands.Cog):
         else:
             embed.add_field(
                 name="📍 Highlights Channel",
-                value="Not created yet (will be created automatically)",
+                value=f"Not created yet (will be created automatically as #{highlight_channel_name})",
                 inline=False
             )
         

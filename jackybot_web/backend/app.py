@@ -416,6 +416,64 @@ def check_channel_exists(server_id, channel_name):
 
     return jsonify({'exists': channel_exists})
 
+@app.route('/api/servers/<server_id>/channels')
+def get_server_channels(server_id):
+    """Get all text channels for a server"""
+    if not session.get('access_token'):
+        return jsonify({'error': 'Not authenticated'}), 401
+
+    # Use bot token to fetch channels (requires bot permissions)
+    response, status_code = make_bot_discord_request('GET', f'/guilds/{server_id}/channels')
+
+    if not response:
+        logger.error(f"Failed to fetch channels for server {server_id}: status {status_code}")
+        return jsonify({'error': 'Failed to fetch channels'}), status_code or 500
+
+    if status_code != 200:
+        logger.error(f"Discord API error for server {server_id}: {status_code} - {response.text}")
+        return jsonify({'error': f'Discord API error: {status_code}'}), status_code
+
+    channels = response.json()
+    # Filter to only text channels (type 0)
+    text_channels = [
+        {'id': ch['id'], 'name': ch['name']}
+        for ch in channels
+        if ch.get('type') == 0  # TEXT CHANNEL
+    ]
+
+    return jsonify(text_channels)
+
+@app.route('/api/servers/<server_id>/cogs/highlights/channel')
+def get_highlights_channel(server_id):
+    """Get the current highlights channel setting"""
+    if not session.get('access_token'):
+        return jsonify({'error': 'Not authenticated'}), 401
+
+    channel_name = cog_manager.get_cog_setting(server_id, 'highlights', 'channel_name')
+    return jsonify({'channel_name': channel_name})
+
+@app.route('/api/servers/<server_id>/cogs/highlights/channel', methods=['POST'])
+def set_highlights_channel(server_id):
+    """Set the highlights channel setting"""
+    if not session.get('access_token'):
+        return jsonify({'error': 'Not authenticated'}), 401
+
+    data = request.json
+    channel_name = data.get('channel_name')
+
+    if channel_name is None:
+        return jsonify({'error': 'Missing channel_name'}), 400
+
+    updated_settings = cog_manager.update_cog_setting(server_id, 'highlights', 'channel_name', channel_name)
+
+    socketio.emit('cog_update', {
+        'server_id': server_id,
+        'cog_name': 'highlights',
+        'settings': updated_settings
+    })
+
+    return jsonify({'channel_name': channel_name})
+
 @socketio.on('connect')
 def handle_connect():
     print('Client connected')

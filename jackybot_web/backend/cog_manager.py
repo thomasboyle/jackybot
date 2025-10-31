@@ -44,17 +44,45 @@ class CogManager:
     
     def update_server_settings(self, server_id: str, cog_name: str, enabled: bool):
         settings = self.load_settings()
-        
+
         if server_id not in settings:
             settings[server_id] = {}
-        
+
         if cog_name not in settings[server_id]:
             settings[server_id][cog_name] = {}
-        
+
         settings[server_id][cog_name]['enabled'] = enabled
         self.save_settings(settings)
-        
+
         return settings[server_id]
+
+    def get_cog_setting(self, server_id: str, cog_name: str, setting_key: str, default=None):
+        """Get a specific setting for a cog"""
+        settings = self.load_settings()
+        server_settings = settings.get(server_id, {})
+        cog_settings = server_settings.get(cog_name, {})
+        return cog_settings.get(setting_key, default)
+
+    def update_cog_setting(self, server_id: str, cog_name: str, setting_key: str, value):
+        """Update a specific setting for a cog"""
+        settings = self.load_settings()
+
+        if server_id not in settings:
+            settings[server_id] = {}
+
+        if cog_name not in settings[server_id]:
+            settings[server_id][cog_name] = {}
+
+        settings[server_id][cog_name][setting_key] = value
+        self.save_settings(settings)
+
+        return settings[server_id][cog_name]
+
+    def get_cog_settings(self, server_id: str, cog_name: str) -> Dict:
+        """Get all settings for a specific cog"""
+        settings = self.load_settings()
+        server_settings = settings.get(server_id, {})
+        return server_settings.get(cog_name, {})
     
     def load_metadata(self) -> List[Dict]:
         with self.lock:
