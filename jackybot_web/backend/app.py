@@ -150,11 +150,11 @@ def make_discord_request(method, endpoint, **kwargs):
     access_token = session.get('access_token')
     if not access_token:
         return None, 401
-    
+
     headers = kwargs.get('headers', {})
     headers['Authorization'] = f'Bearer {access_token}'
     kwargs['headers'] = headers
-    
+
     try:
         response = requests.request(method, f'{Config.DISCORD_API_BASE}{endpoint}', **kwargs)
         if response.status_code == 401:
@@ -177,6 +177,24 @@ def make_discord_request(method, endpoint, **kwargs):
         return response, response.status_code
     except Exception as e:
         logger.error(f"Error making Discord API request: {str(e)}")
+        return None, 500
+
+def make_bot_discord_request(method, endpoint, **kwargs):
+    """Make Discord API request using bot token instead of user OAuth2 token"""
+    bot_token = Config.DISCORD_BOT_TOKEN
+    if not bot_token:
+        logger.error("Bot token not configured")
+        return None, 500
+
+    headers = kwargs.get('headers', {})
+    headers['Authorization'] = f'Bot {bot_token}'
+    kwargs['headers'] = headers
+
+    try:
+        response = requests.request(method, f'{Config.DISCORD_API_BASE}{endpoint}', **kwargs)
+        return response, response.status_code
+    except Exception as e:
+        logger.error(f"Error making bot Discord API request: {str(e)}")
         return None, 500
 
 @app.route('/')
@@ -381,20 +399,21 @@ def update_server_settings(server_id):
 
 @app.route('/api/servers/<server_id>/channels/<channel_name>')
 def check_channel_exists(server_id, channel_name):
-    if not session.get('access_token'):
-        return jsonify({'error': 'Not authenticated'}), 401
-    
-    response, status_code = make_discord_request('GET', f'/guilds/{server_id}/channels')
-    
+    # This endpoint now uses bot token instead of user OAuth2 token
+    # since channel checking requires bot permissions
+    response, status_code = make_bot_discord_request('GET', f'/guilds/{server_id}/channels')
+
     if not response:
+        logger.error(f"Failed to fetch channels for server {server_id}: status {status_code}")
         return jsonify({'error': 'Failed to fetch channels'}), status_code or 500
-    
+
     if status_code != 200:
+        logger.error(f"Discord API error for server {server_id}: {status_code} - {response.text}")
         return jsonify({'error': f'Discord API error: {status_code}'}), status_code
-    
+
     channels = response.json()
     channel_exists = any(ch.get('name') == channel_name and ch.get('type') == 0 for ch in channels)
-    
+
     return jsonify({'exists': channel_exists})
 
 @socketio.on('connect')

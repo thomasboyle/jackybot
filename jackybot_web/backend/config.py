@@ -14,6 +14,7 @@ class Config:
     SECRET_KEY = os.environ.get('FLASK_SECRET_KEY', 'dev-secret-key-change-in-production')
     DISCORD_CLIENT_ID = os.environ.get('DISCORD_CLIENT_ID')
     DISCORD_CLIENT_SECRET = os.environ.get('DISCORD_CLIENT_SECRET')
+    DISCORD_BOT_TOKEN = os.environ.get('DISCORD_BOT_TOKEN')
     DISCORD_REDIRECT_URI = os.environ.get('DISCORD_REDIRECT_URI', 'http://localhost:5000/auth/callback')
     DISCORD_API_BASE = 'https://discord.com/api/v10'
     WEBSOCKET_PORT = int(os.environ.get('WEBSOCKET_PORT', 5000))
