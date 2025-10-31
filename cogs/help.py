@@ -130,9 +130,9 @@ class CustomHelpCommand(commands.Cog):
                 title="🌟 JackyBot Commands & Configuration",
                 description=f"**Visit our web interface to view all commands and configure the bot!**\n\n"
                            f"**[Click here to access the Web UI]({web_ui_url})**\n\n"
-                           f"✨ Browse all available commands\n"
-                           f"⚙️ Configure bot settings and preferences\n"
-                           f"📊 View bot statistics and information",
+                           f"Browse all available commands\n"
+                           f"Configure bot settings and preferences\n"
+                           f"View bot statistics and information",
                 color=0x4169e1,
                 url=web_ui_url
             )
