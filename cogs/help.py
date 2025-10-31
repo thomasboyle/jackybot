@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+from discord import app_commands
 from discord.ui import View, Button, Select
 from functools import lru_cache
 
@@ -163,7 +164,51 @@ class CustomHelpCommand(commands.Cog):
         except Exception as e:
             print(f"Help command error: {e}")
             await ctx.send(f"An error occurred displaying help. Please visit https://jackybot.xyz for command information.")
-    
+
+    @app_commands.command(name="help", description="Show bot commands and access the web UI")
+    async def slash_help(self, interaction: discord.Interaction):
+        """Slash command version of help"""
+        try:
+            web_ui_url = "https://jackybot.xyz"
+
+            embed = discord.Embed(
+                title="🌟 JackyBot Commands & Configuration",
+                description=f"**Visit our web interface to view all commands and configure the bot!**\n\n"
+                           f"**[Click here to access the Web UI]({web_ui_url})**\n\n"
+                           f"Browse all available commands\n"
+                           f"Configure bot settings and preferences\n"
+                           f"View bot statistics and information",
+                color=0x4169e1,
+                url=web_ui_url
+            )
+
+            embed.add_field(
+                name="🔗 Quick Access",
+                value=f"[**Open Web Interface**]({web_ui_url})",
+                inline=False
+            )
+
+            embed.add_field(
+                name="💡 Tip",
+                value="The web interface provides a complete command reference and allows you to customize bot settings for your server.",
+                inline=False
+            )
+
+            embed.set_footer(text="For support, visit jackybot.xyz", icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None)
+            embed.set_thumbnail(url=self.bot.user.avatar.url if self.bot.user.avatar else None)
+
+            view = View()
+            view.add_item(Button(label="Open Web UI", url=web_ui_url, style=discord.ButtonStyle.link, emoji="🌐"))
+
+            await interaction.response.send_message(embed=embed, view=view)
+
+            if interaction.guild:
+                print(f'Command: /help | Server: {interaction.guild.name}')
+
+        except Exception as e:
+            print(f"Help slash command error: {e}")
+            await interaction.response.send_message(f"An error occurred displaying help. Please visit https://jackybot.xyz for command information.")
+
     @commands.command(name="botinfo", aliases=["info"])
     async def botinfo(self, ctx):
         """Display basic bot info"""
