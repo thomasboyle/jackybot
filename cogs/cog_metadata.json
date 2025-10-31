@@ -2,21 +2,21 @@
   {
     "name": "groq_chat",
     "display_name": "AI Chat",
-    "description": "AI-powered chat using Groq API with context management. Usage: @JackyBot [message]",
+    "description": "AI-powered chatbot. Usage: @JackyBot [message]",
     "category": "Recently Updated",
     "icon": "🤖"
   },
   {
     "name": "music_wavelink",
     "display_name": "Music Player",
-    "description": "Play music using Wavelink. Usage: !play [query], !skip",
+    "description": "Play music in a voice channel. Usage: !play [query], !skip",
     "category": "Recently Updated",
     "icon": "🎶"
   },
   {
     "name": "groq_chat",
     "display_name": "AI Chat",
-    "description": "AI-powered chat using Groq API with context management. Usage: @JackyBot [message]",
+    "description": "AI-powered chatbot. Usage: @JackyBot [message]",
     "category": "AI",
     "icon": "🤖"
   },
@@ -30,21 +30,21 @@
   {
     "name": "music_wavelink",
     "display_name": "Music Player",
-    "description": "Play music using Wavelink. Usage: !play [query], !skip",
+    "description": "Play music in a voice channel. Usage: !play [query], !skip",
     "category": "Music",
     "icon": "🎶"
   },
   {
     "name": "freegames",
     "display_name": "Free Games",
-    "description": "Track free game offers. Usage: !freegames. Requires channel: free-games",
+    "description": "Track free game offers from Epic Games. Usage: !freegames. Requires channel: free-games",
     "category": "Text Channels",
     "icon": "🎮"
   },
   {
     "name": "highlights",
     "display_name": "Highlights",
-    "description": "Highlight messages and notifications. Usage: !highlight_stats",
+    "description": "Highlight great messages in a text channel configured through the dashboard. Usage: React with ⭐ to highlight a message.",
     "category": "Text Channels",
     "icon": "⭐"
   },
@@ -100,7 +100,7 @@
   {
     "name": "punisher",
     "display_name": "Punisher",
-    "description": "Moderation and punishment system. Usage: !punisher [text]",
+    "description": "Punisher meme generator. Usage: !punisher [text]",
     "category": "Fun",
     "icon": "🔨"
   },
