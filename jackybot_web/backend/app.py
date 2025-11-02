@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, session, redirect, send_file
+from flask import Flask, jsonify, request, session, redirect
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 import requests
@@ -8,10 +8,6 @@ import os
 import logging
 import threading
 import time
-import subprocess
-import tempfile
-import uuid
-from werkzeug.utils import secure_filename
 from config import Config
 from cog_manager import CogManager
 
@@ -55,6 +51,7 @@ def log_request_info():
         logger.info(f"  Session keys: {list(session.keys())}")
 
 cog_manager = CogManager(Config.COG_SETTINGS_PATH, Config.COG_METADATA_PATH)
+
 
 DISCORD_OAUTH2_URL = 'https://discord.com/oauth2/authorize'
 DISCORD_TOKEN_URL = 'https://discord.com/api/oauth2/token'
@@ -478,123 +475,6 @@ def set_highlights_channel(server_id):
 
     return jsonify({'channel_name': channel_name})
 
-@app.route('/api/compress', methods=['POST'])
-def compress_video():
-    """Compress video file to under 8MB and 60 seconds max"""
-    if not session.get('access_token'):
-        return jsonify({'error': 'Not authenticated'}), 401
-
-    if 'video' not in request.files:
-        return jsonify({'error': 'No video file provided'}), 400
-
-    video_file = request.files['video']
-    output_format = request.form.get('format', 'av1').lower()
-
-    if video_file.filename == '':
-        return jsonify({'error': 'No video file selected'}), 400
-
-    if output_format not in ['av1', 'avif']:
-        return jsonify({'error': 'Invalid output format. Must be av1 or avif'}), 400
-
-    # Check file extension
-    allowed_extensions = ['.mp4', '.mov']
-    filename = secure_filename(video_file.filename)
-    file_ext = os.path.splitext(filename)[1].lower()
-
-    if file_ext not in allowed_extensions:
-        return jsonify({'error': 'Only MP4 and MOV files are supported'}), 400
-
-    # Create temporary directories
-    with tempfile.TemporaryDirectory() as temp_dir:
-        input_path = os.path.join(temp_dir, f"input{file_ext}")
-        output_path = os.path.join(temp_dir, f"output.{output_format}")
-
-        try:
-            # Save uploaded file
-            video_file.save(input_path)
-
-            # Compress video
-            success = compress_video_file(input_path, output_path, output_format)
-
-            if not success:
-                return jsonify({'error': 'Video compression failed'}), 500
-
-            # Check file size
-            file_size = os.path.getsize(output_path)
-            if file_size > 8 * 1024 * 1024:  # 8MB
-                return jsonify({'error': 'Compressed video is still over 8MB. Try a shorter video or different format.'}), 400
-
-            # Return compressed file
-            return send_file(
-                output_path,
-                as_attachment=True,
-                download_name=f"compressed_video.{output_format}",
-                mimetype='application/octet-stream'
-            )
-
-        except Exception as e:
-            logger.error(f"Video compression error: {str(e)}")
-            return jsonify({'error': 'Video compression failed'}), 500
-
-
-def compress_video_file(input_path, output_path, output_format):
-    """Compress video using FFmpeg with local hardware"""
-    try:
-        # Get video duration first
-        duration_cmd = [
-            'ffprobe', '-v', 'error', '-show_entries', 'format=duration',
-            '-of', 'default=noprint_wrappers=1:nokey=1', input_path
-        ]
-
-        result = subprocess.run(duration_cmd, capture_output=True, text=True, timeout=30)
-        if result.returncode != 0:
-            logger.error(f"Failed to get video duration: {result.stderr}")
-            return False
-
-        duration = float(result.stdout.strip())
-
-        # If video is longer than 60 seconds, trim it
-        trim_duration = min(duration, 60.0)
-
-        # Build FFmpeg command based on output format
-        if output_format == 'av1':
-            # AV1 encoding with hardware acceleration if available
-            cmd = [
-                'ffmpeg', '-i', input_path,
-                '-t', str(trim_duration),
-                '-c:v', 'libaom-av1', '-crf', '30', '-b:v', '0',
-                '-c:a', 'libopus', '-b:a', '64k',
-                '-vf', 'scale=-2:720',  # Scale to 720p height, maintain aspect ratio
-                '-y', output_path
-            ]
-        elif output_format == 'avif':
-            # Convert to AVIF (which is essentially AV1 in a container)
-            cmd = [
-                'ffmpeg', '-i', input_path,
-                '-t', str(trim_duration),
-                '-c:v', 'libaom-av1', '-crf', '35', '-b:v', '0',
-                '-c:a', 'libopus', '-b:a', '48k',
-                '-vf', 'scale=-2:480',  # Scale to 480p for AVIF
-                '-f', 'avif',
-                '-y', output_path
-            ]
-
-        # Run FFmpeg command
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)  # 5 minute timeout
-
-        if result.returncode != 0:
-            logger.error(f"FFmpeg failed: {result.stderr}")
-            return False
-
-        logger.info(f"Video compressed successfully: {output_path}")
-        return True
-
-    except subprocess.TimeoutExpired:
-        logger.error("Video compression timed out")
-        return False
-    except Exception as e:
-        logger.error(f"Video compression error: {str(e)}")
-        return False
 
 
 @socketio.on('connect')

@@ -22,12 +22,17 @@ function CompressPage({ user, onLogout }) {
         return
       }
 
-      // Check file size (allow up to 50MB for safer uploads)
-      const maxSize = 50 * 1024 * 1024 // 50MB to avoid server limits
+      // Check file size (allow up to 1GB for large video processing)
+      const maxSize = 1024 * 1024 * 1024 // 1GB
       if (file.size > maxSize) {
-        setError(`File size must be under ${Math.round(maxSize / (1024 * 1024))}MB. Your file is ${formatFileSize(file.size)}.`)
+        setError(`File size must be under 1GB. Your file is ${formatFileSize(file.size)}.`)
         setSelectedFile(null)
         return
+      }
+
+      // Warning for very large files
+      if (file.size > 500 * 1024 * 1024) { // 500MB
+        console.warn(`Large file detected: ${formatFileSize(file.size)}. Processing may take significant time and require substantial RAM.`)
       }
 
       setSelectedFile(file)
@@ -43,58 +48,86 @@ function CompressPage({ user, onLogout }) {
     }
 
     setIsCompressing(true)
-    setCompressionProgress('Starting compression...')
+    setCompressionProgress('Initializing video processor...')
     setError('')
     setSuccess('')
 
     try {
-      setCompressionProgress('Uploading and processing video...')
+      // Load FFmpeg.wasm
+      setCompressionProgress('Loading FFmpeg.wasm...')
+      const { createFFmpeg, fetchFile } = await import('@ffmpeg/ffmpeg')
+      const { toBlobURL } = await import('@ffmpeg/util')
 
-      const formData = new FormData()
-      formData.append('video', selectedFile)
-      formData.append('format', outputFormat)
-
-      const response = await fetch('/api/compress', {
-        method: 'POST',
-        body: formData,
-        credentials: 'include'
+      const ffmpeg = createFFmpeg({
+        corePath: await toBlobURL('/node_modules/@ffmpeg/core/dist/ffmpeg-core.js', 'text/javascript'),
+        wasmPath: await toBlobURL('/node_modules/@ffmpeg/core/dist/ffmpeg-core.wasm', 'application/wasm'),
+        workerPath: await toBlobURL('/node_modules/@ffmpeg/core/dist/ffmpeg-core.worker.js', 'text/javascript'),
+        log: true,
       })
 
-      // Check if response is JSON (error) or binary (success)
-      const contentType = response.headers.get('content-type')
+      await ffmpeg.load()
 
-      if (contentType && contentType.includes('application/json')) {
-        // This is an error response
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Compression failed')
+      setCompressionProgress('Reading video file...')
+
+      // Write input file to FFmpeg virtual filesystem
+      const inputFileName = 'input.' + selectedFile.name.split('.').pop().toLowerCase()
+      ffmpeg.FS('writeFile', inputFileName, await fetchFile(selectedFile))
+
+      setCompressionProgress('Analyzing video...')
+
+      const outputFileName = `compressed_video.${outputFormat}`
+
+      // Build FFmpeg command based on output format
+      let ffmpegArgs
+      if (outputFormat === 'av1') {
+        ffmpegArgs = [
+          '-i', inputFileName,
+          '-t', '60', // Limit to 60 seconds
+          '-c:v', 'libaom-av1', '-crf', '30', '-b:v', '0',
+          '-c:a', 'libopus', '-b:a', '64k',
+          '-vf', 'scale=-2:720', // Scale to 720p height, maintain aspect ratio
+          '-y', outputFileName
+        ]
+      } else { // avif
+        ffmpegArgs = [
+          '-i', inputFileName,
+          '-t', '60', // Limit to 60 seconds
+          '-c:v', 'libaom-av1', '-crf', '35', '-b:v', '0',
+          '-c:a', 'libopus', '-b:a', '48k',
+          '-vf', 'scale=-2:480', // Scale to 480p for AVIF
+          '-f', 'avif',
+          '-y', outputFileName
+        ]
       }
 
-      if (!response.ok) {
-        if (response.status === 413) {
-          throw new Error('File is too large. Please select a video under 100MB.')
-        } else if (response.status === 415) {
-          throw new Error('Unsupported file format. Please use MP4 or MOV files only.')
-        } else if (response.status === 401) {
-          throw new Error('Authentication required. Please log in again.')
-        } else {
-          throw new Error(`Server error: ${response.status}`)
-        }
+      setCompressionProgress('Compressing video...')
+      await ffmpeg.run(...ffmpegArgs)
+
+      setCompressionProgress('Processing complete...')
+
+      // Read output file
+      const outputData = ffmpeg.FS('readFile', outputFileName)
+
+      // Check file size
+      if (outputData.length > 8 * 1024 * 1024) { // 8MB
+        throw new Error('Compressed video is still over 8MB. Try a shorter video or different format.')
       }
 
-      setCompressionProgress('Download starting...')
+      setCompressionProgress('Preparing download...')
 
       // Create download link
-      const blob = await response.blob()
+      const mimeType = outputFormat === 'av1' ? 'video/mp4' : 'image/avif'
+      const blob = new Blob([outputData.buffer], { type: mimeType })
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `compressed_video.${outputFormat}`
+      a.download = outputFileName
       document.body.appendChild(a)
       a.click()
       window.URL.revokeObjectURL(url)
       document.body.removeChild(a)
 
-      setSuccess('Video compressed successfully! Download should start automatically.')
+      setSuccess('Video compressed successfully! Download completed.')
       setCompressionProgress('')
       setSelectedFile(null)
 
@@ -102,8 +135,13 @@ function CompressPage({ user, onLogout }) {
       const fileInput = document.getElementById('video-upload')
       if (fileInput) fileInput.value = ''
 
+      // Clean up FFmpeg
+      ffmpeg.FS('unlink', inputFileName)
+      ffmpeg.FS('unlink', outputFileName)
+
     } catch (err) {
-      setError(err.message)
+      console.error('Compression error:', err)
+      setError(err.message || 'Video compression failed. Please try again.')
       setCompressionProgress('')
     } finally {
       setIsCompressing(false)
@@ -150,7 +188,7 @@ function CompressPage({ user, onLogout }) {
             <h1 className="text-3xl font-bold text-white mb-2">🎥 Video Compression Tool</h1>
             <p className="text-gray-300">
               Compress your MP4 or MOV videos to under 8MB and 60 seconds max.
-              Perfect for Discord uploads and sharing.
+              All processing happens locally in your browser - your videos never leave your device!
             </p>
           </div>
 
@@ -183,7 +221,7 @@ function CompressPage({ user, onLogout }) {
                       )}
                     </div>
                     <div className="text-sm text-gray-500">
-                      Maximum file size: 50MB • Supported: MP4, MOV
+                      Maximum file size: 1GB • Supported: MP4, MOV
                     </div>
                   </label>
                 </div>
@@ -241,6 +279,9 @@ function CompressPage({ user, onLogout }) {
                   <li>• Output will be under 8MB guaranteed</li>
                   <li>• Resolution will be optimized for file size</li>
                   <li>• Audio will be compressed to Opus format</li>
+                  <li>• All processing happens locally in your browser</li>
+                  <li>• Your videos never leave your device</li>
+                  <li>• Large files (500MB+) may require significant RAM and time</li>
                 </ul>
               </div>
 

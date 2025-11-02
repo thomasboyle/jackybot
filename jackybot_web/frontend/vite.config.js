@@ -54,7 +54,14 @@ export default defineConfig({
         ws: true,
         secure: false,
       }
+    },
+    fs: {
+      // Allow serving files from node_modules for FFmpeg.wasm
+      allow: ['../../']
     }
+  },
+  optimizeDeps: {
+    exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/util']
   }
 })
 
