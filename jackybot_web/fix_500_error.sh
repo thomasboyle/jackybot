@@ -50,7 +50,7 @@ server {
     ssl_ciphers HIGH:!aNULL:!MD5;
     ssl_prefer_server_ciphers on;
 
-    client_max_body_size 20M;
+    client_max_body_size 100M;
 
     location /api {
         proxy_pass http://127.0.0.1:5000;

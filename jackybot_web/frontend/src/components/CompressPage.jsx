@@ -22,9 +22,10 @@ function CompressPage({ user, onLogout }) {
         return
       }
 
-      // Check file size (allow up to 100MB for input)
-      if (file.size > 100 * 1024 * 1024) {
-        setError('File size must be under 100MB')
+      // Check file size (allow up to 50MB for safer uploads)
+      const maxSize = 50 * 1024 * 1024 // 50MB to avoid server limits
+      if (file.size > maxSize) {
+        setError(`File size must be under ${Math.round(maxSize / (1024 * 1024))}MB. Your file is ${formatFileSize(file.size)}.`)
         setSelectedFile(null)
         return
       }
@@ -69,7 +70,15 @@ function CompressPage({ user, onLogout }) {
       }
 
       if (!response.ok) {
-        throw new Error(`Server error: ${response.status}`)
+        if (response.status === 413) {
+          throw new Error('File is too large. Please select a video under 100MB.')
+        } else if (response.status === 415) {
+          throw new Error('Unsupported file format. Please use MP4 or MOV files only.')
+        } else if (response.status === 401) {
+          throw new Error('Authentication required. Please log in again.')
+        } else {
+          throw new Error(`Server error: ${response.status}`)
+        }
       }
 
       setCompressionProgress('Download starting...')
@@ -174,7 +183,7 @@ function CompressPage({ user, onLogout }) {
                       )}
                     </div>
                     <div className="text-sm text-gray-500">
-                      Maximum file size: 100MB • Supported: MP4, MOV
+                      Maximum file size: 50MB • Supported: MP4, MOV
                     </div>
                   </label>
                 </div>
