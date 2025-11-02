@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { useState, useEffect } from 'react'
 import LoginPage from './components/LoginPage'
 import Dashboard from './components/Dashboard'
+import CompressPage from './components/CompressPage'
 import { api } from './api/client'
 
 function App() {
@@ -58,13 +59,21 @@ function App() {
             <LoginPage onLogin={() => setIsAuthenticated(true)} />
           } 
         />
-        <Route 
-          path="/dashboard" 
+        <Route
+          path="/dashboard"
           element={
-            isAuthenticated ? 
-            <Dashboard user={user} onLogout={handleLogout} /> : 
+            isAuthenticated ?
+            <Dashboard user={user} onLogout={handleLogout} /> :
             <Navigate to="/login" replace />
-          } 
+          }
+        />
+        <Route
+          path="/compress"
+          element={
+            isAuthenticated ?
+            <CompressPage user={user} onLogout={handleLogout} /> :
+            <Navigate to="/login" replace />
+          }
         />
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
       </Routes>
