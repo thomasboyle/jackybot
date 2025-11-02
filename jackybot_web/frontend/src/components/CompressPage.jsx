@@ -59,9 +59,10 @@ function CompressPage({ user, onLogout }) {
       const { fetchFile, toBlobURL } = await import('@ffmpeg/util')
 
       const ffmpeg = new FFmpeg()
+      const baseURL = window.location.origin + '/ffmpeg/'
       await ffmpeg.load({
-        coreURL: await toBlobURL('http://localhost:5173/ffmpeg/ffmpeg-core.js', 'text/javascript'),
-        wasmURL: await toBlobURL('http://localhost:5173/ffmpeg/ffmpeg-core.wasm', 'application/wasm'),
+        coreURL: await toBlobURL(baseURL + 'ffmpeg-core.js', 'text/javascript'),
+        wasmURL: await toBlobURL(baseURL + 'ffmpeg-core.wasm', 'application/wasm'),
       })
 
       setCompressionProgress('Reading video file...')
