@@ -75,7 +75,8 @@ function CompressPage({ user, onLogout }) {
 
       setCompressionProgress('Analyzing video...')
 
-      const outputFileName = `compressed_video.${outputFormat}`
+      // Determine correct output filename based on format
+      const outputFileName = outputFormat === 'av1' ? 'compressed_video.mp4' : 'compressed_video.avif'
 
       // Build FFmpeg command based on output format
       let ffmpegArgs
@@ -117,11 +118,12 @@ function CompressPage({ user, onLogout }) {
 
       // Create download link
       const mimeType = outputFormat === 'av1' ? 'video/mp4' : 'image/avif'
+      const downloadName = outputFormat === 'av1' ? 'compressed_video.mp4' : 'compressed_video.avif'
       const blob = new Blob([outputData.buffer], { type: mimeType })
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = outputFileName
+      a.download = downloadName
       document.body.appendChild(a)
       a.click()
       window.URL.revokeObjectURL(url)
@@ -186,10 +188,14 @@ function CompressPage({ user, onLogout }) {
         <div className="max-w-4xl mx-auto">
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-white mb-2">🎥 Video Compression Tool</h1>
-            <p className="text-gray-300">
-              Compress your MP4 or MOV videos to under 8MB and 60 seconds max.
-              All processing happens locally in your browser - your videos never leave your device!
-            </p>
+          <p className="text-gray-300">
+            Compress your MP4 or MOV videos to under 8MB and 60 seconds max.
+            All processing happens locally in your browser - your videos never leave your device!
+          </p>
+          <p className="text-sm text-blue-300 mt-2">
+            💡 <strong>Tip:</strong> If you can't upload large files, try refreshing the page or clearing your browser cache.
+            The current limit is 1GB for supported browsers.
+          </p>
           </div>
 
           <div className="bg-gray-800 rounded-lg p-8 shadow-xl">
@@ -244,9 +250,9 @@ function CompressPage({ user, onLogout }) {
                       disabled={isCompressing}
                     />
                     <div className="p-4 bg-gray-700 border-2 border-gray-600 rounded-lg cursor-pointer hover:border-blue-500 peer-checked:border-blue-500 peer-checked:bg-blue-900/20 transition-all">
-                      <div className="text-white font-medium">AV1 (Recommended)</div>
+                      <div className="text-white font-medium">AV1 (MP4)</div>
                       <div className="text-sm text-gray-400 mt-1">
-                        Better compression, smaller file size
+                        Better compression, smaller file size, video format
                       </div>
                     </div>
                   </label>
@@ -264,7 +270,7 @@ function CompressPage({ user, onLogout }) {
                     <div className="p-4 bg-gray-700 border-2 border-gray-600 rounded-lg cursor-pointer hover:border-blue-500 peer-checked:border-blue-500 peer-checked:bg-blue-900/20 transition-all">
                       <div className="text-white font-medium">AVIF</div>
                       <div className="text-sm text-gray-400 mt-1">
-                        Alternative format, good compression
+                        Alternative format, good compression, image sequence
                       </div>
                     </div>
                   </label>
@@ -282,6 +288,7 @@ function CompressPage({ user, onLogout }) {
                   <li>• All processing happens locally in your browser</li>
                   <li>• Your videos never leave your device</li>
                   <li>• Large files (500MB+) may require significant RAM and time</li>
+                  <li>• File size limit: 1GB (browser dependent)</li>
                 </ul>
               </div>
 

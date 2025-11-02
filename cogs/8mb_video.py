@@ -19,7 +19,7 @@ class VideoCompression(commands.Cog):
                 description="**Compress your videos to under 8MB and 60 seconds!**\n\n"
                            f"**[Click here to access the compression tool]({compress_url})**\n\n"
                            "Upload any MP4 or MOV file (any size)\n"
-                           "Choose between AV1 or AVIF format\n"
+                           "Choose between AV1 (MP4) or AVIF format\n"
                            "Get a compressed version under 8MB and 60 seconds\n"
                            "Perfect for Discord uploads and sharing",
                 color=0x4169e1,
@@ -34,7 +34,7 @@ class VideoCompression(commands.Cog):
 
             embed.add_field(
                 name="🎯 Output Formats",
-                value="• AV1 (recommended)\n• AVIF",
+                value="• AV1 (MP4 video)\n• AVIF (image sequence)",
                 inline=True
             )
 
@@ -70,7 +70,7 @@ class VideoCompression(commands.Cog):
                 description="**Compress your videos to under 8MB and 60 seconds!**\n\n"
                            f"**[Click here to access the compression tool]({compress_url})**\n\n"
                            "Upload any MP4 or MOV file (any size)\n"
-                           "Choose between AV1 or AVIF format\n"
+                           "Choose between AV1 (MP4) or AVIF format\n"
                            "Get a compressed version under 8MB and 60 seconds\n"
                            "Perfect for Discord uploads and sharing",
                 color=0x4169e1,
@@ -85,7 +85,7 @@ class VideoCompression(commands.Cog):
 
             embed.add_field(
                 name="🎯 Output Formats",
-                value="• AV1 (recommended)\n• AVIF",
+                value="• AV1 (MP4 video)\n• AVIF (image sequence)",
                 inline=True
             )
 

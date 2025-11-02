@@ -27,6 +27,6 @@ If compression fails:
 
 - Uses @ffmpeg/ffmpeg library for browser-based video processing
 - Supports MP4 and MOV input formats
-- Outputs AV1 (MP4) or AVIF formats
+- Outputs AV1 video in MP4 container or AVIF image sequence
 - Automatic 60-second trimming
 - File size limited to 8MB maximum
