@@ -25,6 +25,7 @@ export default defineConfig({
     port: 5173,
     https: httpsConfig,
     strictPort: true,
+    cors: true,
     proxy: {
       '/api': {
         target: backendUrl,
