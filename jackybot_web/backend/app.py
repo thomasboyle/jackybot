@@ -529,7 +529,7 @@ def compress_video():
                 output_path,
                 as_attachment=True,
                 download_name=f"compressed_video.{output_format}",
-                mimetype='video/mp4' if output_format == 'av1' else 'video/mp4'
+                mimetype='application/octet-stream'
             )
 
         except Exception as e:

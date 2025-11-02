@@ -59,9 +59,17 @@ function CompressPage({ user, onLogout }) {
         credentials: 'include'
       })
 
-      if (!response.ok) {
+      // Check if response is JSON (error) or binary (success)
+      const contentType = response.headers.get('content-type')
+
+      if (contentType && contentType.includes('application/json')) {
+        // This is an error response
         const errorData = await response.json()
         throw new Error(errorData.error || 'Compression failed')
+      }
+
+      if (!response.ok) {
+        throw new Error(`Server error: ${response.status}`)
       }
 
       setCompressionProgress('Download starting...')
