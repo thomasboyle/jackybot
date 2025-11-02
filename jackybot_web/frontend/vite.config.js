@@ -62,15 +62,6 @@ export default defineConfig({
   },
   define: {
     global: 'globalThis'
-  },
-  build: {
-    rollupOptions: {
-      output: {
-        // Allow dynamic imports in chunks
-        inlineDynamicImports: false,
-        manualChunks: undefined
-      }
-    }
   }
 })
 
