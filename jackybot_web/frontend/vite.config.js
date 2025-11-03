@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import fs from 'fs'
 import path from 'path'
+import { viteStaticCopy } from 'vite-plugin-static-copy'
 
 const certPath = process.env.SSL_CERT_PATH || path.join(__dirname, 'ssl', 'cert.pem')
 const keyPath = process.env.SSL_KEY_PATH || path.join(__dirname, 'ssl', 'key.pem')
@@ -19,7 +20,17 @@ if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
 }
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    viteStaticCopy({
+      targets: [
+        {
+          src: 'node_modules/@ffmpeg/core/dist/umd/ffmpeg-core.*',
+          dest: ''
+        }
+      ]
+    })
+  ],
   server: {
     host: '0.0.0.0',
     port: 5173,

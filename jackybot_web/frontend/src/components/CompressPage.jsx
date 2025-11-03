@@ -60,8 +60,8 @@ function CompressPage({ user, onLogout }) {
 
       const ffmpeg = new FFmpeg()
       await ffmpeg.load({
-        coreURL: 'https://unpkg.com/@ffmpeg/core@0.12.4/dist/umd/ffmpeg-core.js',
-        wasmURL: 'https://unpkg.com/@ffmpeg/core@0.12.4/dist/umd/ffmpeg-core.wasm',
+        coreURL: '/ffmpeg-core.js',
+        wasmURL: '/ffmpeg-core.wasm',
       })
 
       setCompressionProgress('Reading video file...')
