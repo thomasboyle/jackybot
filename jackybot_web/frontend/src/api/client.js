@@ -106,6 +106,52 @@ export const api = {
       body: JSON.stringify({ channel_name: channelName })
     });
     return handleResponse(response);
+  },
+
+  async convertVideo(formData) {
+    const response = await fetch(`${API_BASE}/convert/video`, {
+      method: 'POST',
+      credentials: 'include',
+      body: formData
+    });
+    if (!response.ok) {
+      let errorMessage = `Request failed with status ${response.status}`;
+      try {
+        const errorData = await response.json();
+        if (errorData.error) {
+          errorMessage = errorData.error;
+        }
+      } catch (e) {
+        // If response is not JSON, use default message
+      }
+      const error = new Error(errorMessage);
+      error.status = response.status;
+      throw error;
+    }
+    return response;
+  },
+
+  async convertImage(formData) {
+    const response = await fetch(`${API_BASE}/convert/image`, {
+      method: 'POST',
+      credentials: 'include',
+      body: formData
+    });
+    if (!response.ok) {
+      let errorMessage = `Request failed with status ${response.status}`;
+      try {
+        const errorData = await response.json();
+        if (errorData.error) {
+          errorMessage = errorData.error;
+        }
+      } catch (e) {
+        // If response is not JSON, use default message
+      }
+      const error = new Error(errorMessage);
+      error.status = response.status;
+      throw error;
+    }
+    return response;
   }
 };
 

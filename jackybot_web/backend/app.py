@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, session, redirect
+from flask import Flask, jsonify, request, session, redirect, send_file
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 import requests
@@ -8,6 +8,13 @@ import os
 import logging
 import threading
 import time
+import tempfile
+import ffmpeg
+import signal
+import subprocess
+import threading
+from PIL import Image
+from werkzeug.utils import secure_filename
 from config import Config
 from cog_manager import CogManager
 
@@ -51,6 +58,39 @@ def log_request_info():
         logger.info(f"  Session keys: {list(session.keys())}")
 
 cog_manager = CogManager(Config.COG_SETTINGS_PATH, Config.COG_METADATA_PATH)
+
+# Global list to track running FFmpeg processes
+ffmpeg_processes = []
+ffmpeg_processes_lock = threading.Lock()
+
+def cleanup_ffmpeg_processes():
+    """Clean up any running FFmpeg processes"""
+    with ffmpeg_processes_lock:
+        for proc in ffmpeg_processes[:]:  # Copy list to avoid modification during iteration
+            try:
+                if proc.poll() is None:  # Process is still running
+                    logging.info(f"Terminating FFmpeg process {proc.pid}")
+                    proc.terminate()
+                    # Wait a bit for graceful termination
+                    try:
+                        proc.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        logging.warning(f"Force killing FFmpeg process {proc.pid}")
+                        proc.kill()
+                        proc.wait()
+                ffmpeg_processes.remove(proc)
+            except Exception as e:
+                logging.error(f"Error cleaning up FFmpeg process: {e}")
+
+def signal_handler(signum, frame):
+    """Handle shutdown signals"""
+    logging.info(f"Received signal {signum}, cleaning up...")
+    cleanup_ffmpeg_processes()
+    exit(0)
+
+# Register signal handlers
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
 
 
 DISCORD_OAUTH2_URL = 'https://discord.com/oauth2/authorize'
@@ -475,7 +515,192 @@ def set_highlights_channel(server_id):
 
     return jsonify({'channel_name': channel_name})
 
+@app.route('/api/convert/video', methods=['POST'])
+def convert_video():
+    """Convert uploaded video to AV1 format"""
+    if not session.get('access_token'):
+        return jsonify({'error': 'Not authenticated'}), 401
 
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+
+    # Validate file type
+    allowed_video_types = ['video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/webm']
+    if file.content_type not in allowed_video_types:
+        return jsonify({'error': 'Unsupported video format'}), 400
+
+    # Check file size (1GB limit)
+    if file.content_length and file.content_length > 1024 * 1024 * 1024:
+        return jsonify({'error': 'File too large (max 1GB)'}), 400
+
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Save uploaded file
+            input_filename = secure_filename(file.filename)
+            input_path = os.path.join(temp_dir, input_filename)
+            file.save(input_path)
+
+            # Determine output filename
+            output_filename = os.path.splitext(input_filename)[0] + '_av1.mp4'
+            output_path = os.path.join(temp_dir, output_filename)
+
+            # Convert video to AV1 using SVT-AV1 with adaptive settings based on file size
+            # Get video info to determine optimal settings
+            probe_cmd = [
+                'ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams', input_path
+            ]
+            probe_result = subprocess.run(probe_cmd, capture_output=True, text=True)
+            video_info = {}
+
+            if probe_result.returncode == 0:
+                import json
+                probe_data = json.loads(probe_result.stdout)
+                video_stream = next((s for s in probe_data.get('streams', []) if s.get('codec_type') == 'video'), {})
+                width = video_stream.get('width', 1920)
+                height = video_stream.get('height', 1080)
+                duration = float(probe_data.get('format', {}).get('duration', '0'))
+
+                video_info = {
+                    'width': width,
+                    'height': height,
+                    'duration': duration,
+                    'resolution': width * height
+                }
+
+                # Adaptive settings based on resolution and duration
+                if video_info['resolution'] > 3840 * 2160:  # 8K+
+                    preset = '6'  # Slightly slower but more stable
+                    crf = '40'    # Lower quality to reduce file size
+                    scale_filter = '-vf scale=-2:2160'  # Scale down to 4K
+                elif video_info['resolution'] > 1920 * 1080:  # 4K
+                    preset = '7'  # Good balance of speed/quality
+                    crf = '38'    # Good quality
+                    scale_filter = '-vf scale=-2:1440'  # Scale down to 1440p
+                else:  # HD or lower
+                    preset = '8'  # Fastest for smaller videos
+                    crf = '35'    # High quality
+                    scale_filter = ''  # No scaling needed
+            else:
+                # Fallback settings if probing fails
+                preset = '7'
+                crf = '38'
+                scale_filter = ''
+
+            # Build FFmpeg command with adaptive settings
+            cmd = [
+                'ffmpeg', '-y', '-i', input_path,
+                '-c:v', 'libsvtav1',  # SVT-AV1 encoder
+                '-preset', preset,    # Adaptive speed preset
+                '-crf', crf,          # Adaptive quality
+                '-c:a', 'aac',
+                '-b:a', '128k',
+                '-movflags', '+faststart',  # Optimize for web streaming
+            ]
+
+            # Add scaling filter if needed
+            if scale_filter:
+                cmd.extend(scale_filter.split())
+
+            cmd.append(output_path)
+
+            # Run FFmpeg process and track it
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            with ffmpeg_processes_lock:
+                ffmpeg_processes.append(proc)
+
+            try:
+                # Adaptive timeout based on video duration (minimum 5 minutes, max 20 minutes)
+                duration = video_info.get('duration', 0)
+                timeout_seconds = max(300, min(1200, int(duration * 2)))  # 2x duration, clamped between 5-20 min
+                logging.info(f"Starting conversion with {timeout_seconds}s timeout for {duration}s video")
+
+                # Wait for completion
+                stdout, stderr = proc.communicate(timeout=timeout_seconds)
+
+                if proc.returncode != 0:
+                    error_msg = stderr.decode() if stderr else "Unknown FFmpeg error"
+                    raise Exception(f"FFmpeg failed with return code {proc.returncode}: {error_msg}")
+
+            finally:
+                # Remove from tracked processes
+                with ffmpeg_processes_lock:
+                    if proc in ffmpeg_processes:
+                        ffmpeg_processes.remove(proc)
+
+            # Return the converted file
+            return send_file(output_path, as_attachment=True, download_name=output_filename)
+
+    except subprocess.TimeoutExpired:
+        logging.error('FFmpeg conversion timed out after 5 minutes')
+        cleanup_ffmpeg_processes()  # Clean up in case of timeout
+        return jsonify({'error': 'Video conversion timed out'}), 500
+    except Exception as e:
+        logging.error(f'Conversion error: {str(e)}')
+        cleanup_ffmpeg_processes()  # Clean up on any error
+        return jsonify({'error': 'Video conversion failed'}), 500
+
+@app.route('/api/convert/image', methods=['POST'])
+def convert_image():
+    """Convert uploaded image to AVIF format"""
+    if not session.get('access_token'):
+        return jsonify({'error': 'Not authenticated'}), 401
+
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+
+    # Validate file type
+    allowed_image_types = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/bmp']
+    if file.content_type not in allowed_image_types:
+        return jsonify({'error': 'Unsupported image format'}), 400
+
+    # Check file size (50MB limit)
+    if file.content_length and file.content_length > 50 * 1024 * 1024:
+        return jsonify({'error': 'File too large (max 50MB)'}), 400
+
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Save uploaded file
+            input_filename = secure_filename(file.filename)
+            input_path = os.path.join(temp_dir, input_filename)
+
+            # Determine output filename
+            output_filename = os.path.splitext(input_filename)[0] + '.avif'
+            output_path = os.path.join(temp_dir, output_filename)
+
+            # Open and convert image to AVIF
+            with Image.open(file) as img:
+                # Convert to RGB if necessary (AVIF supports RGB and RGBA)
+                if img.mode in ('RGBA', 'LA', 'P'):
+                    if img.mode == 'P':
+                        img = img.convert('RGBA')
+                    # For images with transparency, keep it
+                elif img.mode != 'RGB':
+                    img = img.convert('RGB')
+
+                # Save as AVIF with good quality settings
+                img.save(output_path, 'AVIF', quality=80, speed=6)
+
+            # Return the converted file
+            return send_file(output_path, as_attachment=True, download_name=output_filename)
+
+    except Exception as e:
+        logging.error(f'Image conversion error: {str(e)}')
+        return jsonify({'error': 'Image conversion failed'}), 500
+
+
+
+@app.teardown_appcontext
+def teardown_appcontext(exception=None):
+    """Clean up FFmpeg processes when app context ends"""
+    cleanup_ffmpeg_processes()
 
 @socketio.on('connect')
 def handle_connect():
@@ -487,5 +712,5 @@ def handle_disconnect():
 
 if __name__ == '__main__':
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
-    socketio.run(app, host='0.0.0.0', port=Config.WEBSOCKET_PORT, debug=debug_mode)
+    socketio.run(app, host='0.0.0.0', port=Config.WEBSOCKET_PORT, debug=debug_mode, allow_unsafe_werkzeug=True)
 

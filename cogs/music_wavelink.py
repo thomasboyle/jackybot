@@ -337,14 +337,24 @@ class MusicWavelinkCog(commands.Cog):
         if not ctx.author.voice:
             raise commands.CommandError("Join a voice channel first.")
         player = ctx.voice_client
-        if not player:
-            try:
-                player = await ctx.author.voice.channel.connect(cls=wavelink.Player)
-            except Exception:
-                raise commands.CommandError("Failed to connect to voice channel.")
-        player.text_channel = ctx.channel
-        if player.channel != ctx.author.voice.channel:
-            await player.move_to(ctx.author.voice.channel)
+        if not player or not player.connected:
+            for attempt in range(2):  # retry once
+                try:
+                    if player and player.connected:
+                        break
+                    player = await ctx.author.voice.channel.connect(cls=wavelink.Player)
+                    player.text_channel = ctx.channel
+                    if player.channel != ctx.author.voice.channel:
+                        await player.move_to(ctx.author.voice.channel)
+                    break
+                except Exception as e:
+                    if attempt == 1:
+                        raise commands.CommandError(f"Failed to connect to voice channel: {e}")
+                    await asyncio.sleep(1)  # wait a bit before retry
+        else:
+            player.text_channel = ctx.channel
+            if player.channel != ctx.author.voice.channel:
+                await player.move_to(ctx.author.voice.channel)
         return player
 
     def _get_player(self, ctx: commands.Context) -> wavelink.Player:

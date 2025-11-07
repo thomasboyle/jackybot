@@ -5,34 +5,41 @@ import { api } from '../api/client'
 function CompressPage({ user, onLogout }) {
   const navigate = useNavigate()
   const [selectedFile, setSelectedFile] = useState(null)
-  const [outputFormat, setOutputFormat] = useState('av1')
-  const [isCompressing, setIsCompressing] = useState(false)
-  const [compressionProgress, setCompressionProgress] = useState('')
+  const [conversionType, setConversionType] = useState('video') // 'video' or 'image'
+  const [isConverting, setIsConverting] = useState(false)
+  const [conversionProgress, setConversionProgress] = useState('')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
   const handleFileSelect = (event) => {
     const file = event.target.files[0]
     if (file) {
-      // Check file type
-      const allowedTypes = ['video/mp4', 'video/quicktime']
+      // Check file type based on conversion type
+      let allowedTypes = []
+      let maxSize = 0
+      let sizeError = ''
+
+      if (conversionType === 'video') {
+        allowedTypes = ['video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/webm']
+        maxSize = 1024 * 1024 * 1024 // 1GB
+        sizeError = 'File size must be under 1GB'
+      } else if (conversionType === 'image') {
+        allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/bmp']
+        maxSize = 50 * 1024 * 1024 // 50MB
+        sizeError = 'File size must be under 50MB'
+      }
+
       if (!allowedTypes.includes(file.type)) {
-        setError('Please select an MP4 or MOV file')
+        const typeNames = conversionType === 'video' ? 'MP4, MOV, AVI, or WebM' : 'JPEG, PNG, WebP, GIF, or BMP'
+        setError(`Please select a ${typeNames} file`)
         setSelectedFile(null)
         return
       }
 
-      // Check file size (allow up to 1GB for large video processing)
-      const maxSize = 1024 * 1024 * 1024 // 1GB
       if (file.size > maxSize) {
-        setError(`File size must be under 1GB. Your file is ${formatFileSize(file.size)}.`)
+        setError(`${sizeError}. Your file is ${formatFileSize(file.size)}.`)
         setSelectedFile(null)
         return
-      }
-
-      // Warning for very large files
-      if (file.size > 500 * 1024 * 1024) { // 500MB
-        console.warn(`Large file detected: ${formatFileSize(file.size)}. Processing may take significant time and require substantial RAM.`)
       }
 
       setSelectedFile(file)
@@ -41,82 +48,33 @@ function CompressPage({ user, onLogout }) {
     }
   }
 
-  const handleCompress = async () => {
+  const handleConvert = async () => {
     if (!selectedFile) {
-      setError('Please select a video file first')
+      setError('Please select a file first')
       return
     }
 
-    setIsCompressing(true)
-    setCompressionProgress('Initializing video processor...')
+    setIsConverting(true)
+    setConversionProgress('Uploading file...')
     setError('')
     setSuccess('')
 
     try {
-      // Load FFmpeg.wasm
-      setCompressionProgress('Loading FFmpeg.wasm...')
-      const { FFmpeg } = await import('@ffmpeg/ffmpeg')
-      const { fetchFile } = await import('@ffmpeg/util')
+      const formData = new FormData()
+      formData.append('file', selectedFile)
 
-      const ffmpeg = new FFmpeg()
-      await ffmpeg.load({
-        coreURL: '/ffmpeg-core.js',
-        wasmURL: '/ffmpeg-core.wasm',
-      })
+      const response = conversionType === 'video'
+        ? await api.convertVideo(formData)
+        : await api.convertImage(formData)
 
-      setCompressionProgress('Reading video file...')
-
-      // Write input file to FFmpeg virtual filesystem
-      const inputFileName = 'input.' + selectedFile.name.split('.').pop().toLowerCase()
-      ffmpeg.FS('writeFile', inputFileName, await fetchFile(selectedFile))
-
-      setCompressionProgress('Analyzing video...')
-
-      // Determine correct output filename based on format
-      const outputFileName = outputFormat === 'av1' ? 'compressed_video.mp4' : 'compressed_video.avif'
-
-      // Build FFmpeg command based on output format
-      let ffmpegArgs
-      if (outputFormat === 'av1') {
-        ffmpegArgs = [
-          '-i', inputFileName,
-          '-t', '60', // Limit to 60 seconds
-          '-c:v', 'libaom-av1', '-crf', '30', '-b:v', '0',
-          '-c:a', 'libopus', '-b:a', '64k',
-          '-vf', 'scale=-2:720', // Scale to 720p height, maintain aspect ratio
-          '-y', outputFileName
-        ]
-      } else { // avif
-        ffmpegArgs = [
-          '-i', inputFileName,
-          '-t', '60', // Limit to 60 seconds
-          '-c:v', 'libaom-av1', '-crf', '35', '-b:v', '0',
-          '-c:a', 'libopus', '-b:a', '48k',
-          '-vf', 'scale=-2:480', // Scale to 480p for AVIF
-          '-f', 'avif',
-          '-y', outputFileName
-        ]
-      }
-
-      setCompressionProgress('Compressing video...')
-      await ffmpeg.run(...ffmpegArgs)
-
-      setCompressionProgress('Processing complete...')
-
-      // Read output file
-      const outputData = ffmpeg.FS('readFile', outputFileName)
-
-      // Check file size
-      if (outputData.length > 8 * 1024 * 1024) { // 8MB
-        throw new Error('Compressed video is still over 8MB. Try a shorter video or different format.')
-      }
-
-      setCompressionProgress('Preparing download...')
+      setConversionProgress('Processing complete!')
 
       // Create download link
-      const mimeType = outputFormat === 'av1' ? 'video/mp4' : 'image/avif'
-      const downloadName = outputFormat === 'av1' ? 'compressed_video.mp4' : 'compressed_video.avif'
-      const blob = new Blob([outputData.buffer], { type: mimeType })
+      const mimeType = conversionType === 'video' ? 'video/mp4' : 'image/avif'
+      const extension = conversionType === 'video' ? 'mp4' : 'avif'
+      const downloadName = `converted.${extension}`
+
+      const blob = await response.blob()
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
@@ -126,24 +84,41 @@ function CompressPage({ user, onLogout }) {
       window.URL.revokeObjectURL(url)
       document.body.removeChild(a)
 
-      setSuccess('Video compressed successfully! Download completed.')
-      setCompressionProgress('')
+      setSuccess(`${conversionType === 'video' ? 'Video' : 'Image'} converted successfully! Download completed.`)
+      setConversionProgress('')
       setSelectedFile(null)
 
       // Reset file input
-      const fileInput = document.getElementById('video-upload')
+      const fileInput = document.getElementById('file-upload')
       if (fileInput) fileInput.value = ''
 
-      // Clean up FFmpeg
-      ffmpeg.FS('unlink', inputFileName)
-      ffmpeg.FS('unlink', outputFileName)
-
     } catch (err) {
-      console.error('Compression error:', err)
-      setError(err.message || 'Video compression failed. Please try again.')
-      setCompressionProgress('')
+      console.error('Conversion error:', err)
+
+      let errorMessage = 'Conversion failed. Please try again.'
+
+      if (err.response?.data?.error) {
+        errorMessage = err.response.data.error
+      } else if (err.message) {
+        if (err.message.includes('NetworkError') || err.message.includes('fetch')) {
+          errorMessage = 'Network error. Please check your connection and try again.'
+        } else if (err.message.includes('timeout')) {
+          errorMessage = 'Conversion timed out. The file may be too large or complex. Try a smaller file.'
+        } else {
+          errorMessage = err.message
+        }
+      } else if (err.status === 413) {
+        errorMessage = 'File too large. Please select a smaller file.'
+      } else if (err.status === 415) {
+        errorMessage = 'Unsupported file format. Please check the supported formats.'
+      } else if (err.status === 500) {
+        errorMessage = 'Server error. The video may be corrupted or too complex. Try a different file.'
+      }
+
+      setError(errorMessage)
+      setConversionProgress('')
     } finally {
-      setIsCompressing(false)
+      setIsConverting(false)
     }
   }
 
@@ -165,9 +140,9 @@ function CompressPage({ user, onLogout }) {
               onClick={() => navigate('/dashboard')}
               className="text-white hover:text-blue-400 transition-colors"
             >
-              ← Back to Dashboard
+              ? Back to Dashboard
             </button>
-            <div className="text-xl font-bold text-white">🎥 Video Compression</div>
+            <div className="text-xl font-bold text-white">?? Media Converter</div>
           </div>
           <div className="flex items-center space-x-4">
             <span className="text-gray-300">Welcome, {user?.username}</span>
@@ -184,35 +159,73 @@ function CompressPage({ user, onLogout }) {
       <div className="p-8">
         <div className="max-w-4xl mx-auto">
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-white mb-2">🎥 Video Compression Tool</h1>
-          <p className="text-gray-300">
-            Compress your MP4 or MOV videos to under 8MB and 60 seconds max.
-            All processing happens locally in your browser - your videos never leave your device!
-          </p>
-          <p className="text-sm text-blue-300 mt-2">
-            💡 <strong>Tip:</strong> If you can't upload large files, try refreshing the page or clearing your browser cache.
-            The current limit is 1GB for supported browsers.
-          </p>
+            <h1 className="text-3xl font-bold text-white mb-2">?? Media Converter</h1>
+            <p className="text-gray-300">
+              Convert your videos to AV1 format or images to AVIF format.
+              Files are processed on our secure servers for optimal performance and quality.
+            </p>
           </div>
 
           <div className="bg-gray-800 rounded-lg p-8 shadow-xl">
             <div className="space-y-6">
+              {/* Conversion Type Selection */}
+              <div>
+                <label className="block text-lg font-medium text-white mb-3">
+                  Select Conversion Type
+                </label>
+                <div className="flex space-x-4">
+                  <button
+                    onClick={() => {
+                      setConversionType('video')
+                      setSelectedFile(null)
+                      setError('')
+                      setSuccess('')
+                    }}
+                    className={`px-6 py-3 rounded-lg font-medium transition-colors ${
+                      conversionType === 'video'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    }`}
+                  >
+                    ?? Video to AV1
+                  </button>
+                  <button
+                    onClick={() => {
+                      setConversionType('image')
+                      setSelectedFile(null)
+                      setError('')
+                      setSuccess('')
+                    }}
+                    className={`px-6 py-3 rounded-lg font-medium transition-colors ${
+                      conversionType === 'image'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    }`}
+                  >
+                    ??? Image to AVIF
+                  </button>
+                </div>
+              </div>
+
               {/* File Upload Section */}
               <div>
                 <label className="block text-lg font-medium text-white mb-3">
-                  Upload Video File
+                  Upload {conversionType === 'video' ? 'Video' : 'Image'} File
                 </label>
                 <div className="border-2 border-dashed border-gray-600 rounded-lg p-8 text-center hover:border-blue-500 transition-colors">
                   <input
-                    id="video-upload"
+                    id="file-upload"
                     type="file"
-                    accept=".mp4,.mov,video/mp4,video/quicktime"
+                    accept={conversionType === 'video'
+                      ? ".mp4,.mov,.avi,.webm,video/mp4,video/quicktime,video/x-msvideo,video/webm"
+                      : ".jpg,.jpeg,.png,.webp,.gif,.bmp,image/jpeg,image/png,image/webp,image/gif,image/bmp"
+                    }
                     onChange={handleFileSelect}
                     className="hidden"
-                    disabled={isCompressing}
+                    disabled={isConverting}
                   />
-                  <label htmlFor="video-upload" className="cursor-pointer">
-                    <div className="text-6xl mb-4">📁</div>
+                  <label htmlFor="file-upload" className="cursor-pointer">
+                    <div className="text-6xl mb-4">{conversionType === 'video' ? '??' : '???'}</div>
                     <div className="text-gray-300 mb-2">
                       {selectedFile ? (
                         <div>
@@ -220,98 +233,79 @@ function CompressPage({ user, onLogout }) {
                           <div className="text-sm text-gray-400">{formatFileSize(selectedFile.size)}</div>
                         </div>
                       ) : (
-                        'Click to select MP4 or MOV file'
+                        `Click to select ${conversionType === 'video' ? 'video' : 'image'} file`
                       )}
                     </div>
                     <div className="text-sm text-gray-500">
-                      Maximum file size: 1GB • Supported: MP4, MOV
+                      Maximum file size: {conversionType === 'video' ? '1GB' : '50MB'} ?
+                      Supported: {conversionType === 'video' ? 'MP4, MOV, AVI, WebM' : 'JPEG, PNG, WebP, GIF, BMP'}
                     </div>
                   </label>
                 </div>
               </div>
 
-              {/* Format Selection */}
-              <div>
-                <label className="block text-lg font-medium text-white mb-3">
-                  Output Format
-                </label>
-                <div className="grid grid-cols-2 gap-4">
-                  <label className="relative">
-                    <input
-                      type="radio"
-                      name="format"
-                      value="av1"
-                      checked={outputFormat === 'av1'}
-                      onChange={(e) => setOutputFormat(e.target.value)}
-                      className="sr-only peer"
-                      disabled={isCompressing}
-                    />
-                    <div className="p-4 bg-gray-700 border-2 border-gray-600 rounded-lg cursor-pointer hover:border-blue-500 peer-checked:border-blue-500 peer-checked:bg-blue-900/20 transition-all">
-                      <div className="text-white font-medium">AV1 (MP4)</div>
-                      <div className="text-sm text-gray-400 mt-1">
-                        Better compression, smaller file size, video format
-                      </div>
-                    </div>
-                  </label>
-
-                  <label className="relative">
-                    <input
-                      type="radio"
-                      name="format"
-                      value="avif"
-                      checked={outputFormat === 'avif'}
-                      onChange={(e) => setOutputFormat(e.target.value)}
-                      className="sr-only peer"
-                      disabled={isCompressing}
-                    />
-                    <div className="p-4 bg-gray-700 border-2 border-gray-600 rounded-lg cursor-pointer hover:border-blue-500 peer-checked:border-blue-500 peer-checked:bg-blue-900/20 transition-all">
-                      <div className="text-white font-medium">AVIF</div>
-                      <div className="text-sm text-gray-400 mt-1">
-                        Alternative format, good compression, image sequence
-                      </div>
-                    </div>
-                  </label>
-                </div>
-              </div>
-
-              {/* Compression Info */}
+              {/* Output Info */}
               <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4">
-                <h3 className="text-blue-400 font-medium mb-2">Compression Details</h3>
+                <h3 className="text-blue-400 font-medium mb-2">
+                  Output Format: {conversionType === 'video' ? 'MP4 (AV1)' : 'AVIF'}
+                </h3>
+                <p className="text-sm text-gray-300">
+                  {conversionType === 'video'
+                    ? 'Videos will be converted to AV1 encoding for superior compression and quality while maintaining smaller file sizes.'
+                    : 'Images will be converted to AVIF format for excellent compression with minimal quality loss.'
+                  }
+                </p>
+              </div>
+
+              {/* Conversion Info */}
+              <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4">
+                <h3 className="text-blue-400 font-medium mb-2">Conversion Details</h3>
                 <ul className="text-sm text-gray-300 space-y-1">
-                  <li>• Videos longer than 60 seconds will be trimmed</li>
-                  <li>• Output will be under 8MB guaranteed</li>
-                  <li>• Resolution will be optimized for file size</li>
-                  <li>• Audio will be compressed to Opus format</li>
-                  <li>• All processing happens locally in your browser</li>
-                  <li>• Your videos never leave your device</li>
-                  <li>• Large files (500MB+) may require significant RAM and time</li>
-                  <li>• File size limit: 1GB (browser dependent)</li>
+                  {conversionType === 'video' ? (
+                    <>
+                      <li>? High-efficiency AV1 video encoding</li>
+                      <li>? Optimized bitrate for quality and size balance</li>
+                      <li>? Maintains original resolution when possible</li>
+                      <li>? Preserves audio quality with efficient encoding</li>
+                      <li>? Fast processing with server-side acceleration</li>
+                    </>
+                  ) : (
+                    <>
+                      <li>? Modern AVIF image format with superior compression</li>
+                      <li>? Maintains high visual quality</li>
+                      <li>? Supports transparency and animation</li>
+                      <li>? Significant file size reduction</li>
+                      <li>? Fast processing with server-side optimization</li>
+                    </>
+                  )}
+                  <li>? Secure server-side processing</li>
+                  <li>? Files are automatically deleted after conversion</li>
                 </ul>
               </div>
 
-              {/* Compress Button */}
+              {/* Convert Button */}
               <button
-                onClick={handleCompress}
-                disabled={!selectedFile || isCompressing}
+                onClick={handleConvert}
+                disabled={!selectedFile || isConverting}
                 className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-medium py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-2"
               >
-                {isCompressing ? (
+                {isConverting ? (
                   <>
                     <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                    Compressing...
+                    Converting...
                   </>
                 ) : (
                   <>
-                    <span>🎥</span>
-                    Compress Video
+                    <span>{conversionType === 'video' ? '??' : '???'}</span>
+                    Convert {conversionType === 'video' ? 'Video' : 'Image'}
                   </>
                 )}
               </button>
 
               {/* Progress Messages */}
-              {compressionProgress && (
+              {conversionProgress && (
                 <div className="text-blue-400 text-center py-2">
-                  {compressionProgress}
+                  {conversionProgress}
                 </div>
               )}
 
