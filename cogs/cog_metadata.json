@@ -63,6 +63,13 @@
     "icon": "🌟"
   },
   {
+    "name": "ark_raiders_updates",
+    "display_name": "ARC Raiders Updates",
+    "description": "ARC Raiders patch notes and update notifications. Automatic - no command needed. Requires channel: ark-raiders-updates",
+    "category": "Text Channels",
+    "icon": "🏹"
+  },
+  {
     "name": "aura",
     "display_name": "Aura Points",
     "description": "Track aura points for users. Usage: !aura",
