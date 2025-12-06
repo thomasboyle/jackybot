@@ -1,15 +1,16 @@
 import asyncio
+import logging
 import os
 import re
 import io
 import time
 from typing import Optional
+from urllib.parse import quote
 import aiohttp
 import discord
 from discord.ext import commands
 from discord.ui import Button, View
 import wavelink
-from functools import lru_cache
 
 LYRICS_CLEANUP_REGEX = re.compile(r'[\[\(\{].*?[\]\)\}]')
 LYRICS_WHITESPACE_REGEX = re.compile(r'\s+')
@@ -21,6 +22,7 @@ class MusicWavelinkCog(commands.Cog):
         self.bot = bot
         self.session = None
         self.bot.loop.create_task(self.connect_nodes())
+        self.logger = logging.getLogger(__name__)
 
     async def connect_nodes(self):
         await self.bot.wait_until_ready()
@@ -74,6 +76,8 @@ class MusicWavelinkCog(commands.Cog):
                 await player.idle_timer
             except asyncio.CancelledError:
                 pass
+        if hasattr(player, 'idle_timer'):
+            delattr(player, 'idle_timer')
 
     async def cog_unload(self):
         if self.session:
@@ -95,7 +99,7 @@ class MusicWavelinkCog(commands.Cog):
             if channel:
                 await self._send_now_playing(channel, player)
         except Exception:
-            pass
+            self.logger.exception("Track start handler failed")
 
     @commands.Cog.listener()
     async def on_wavelink_track_end(self, payload: wavelink.TrackEndEventPayload):
@@ -116,7 +120,7 @@ class MusicWavelinkCog(commands.Cog):
             elif len(player.queue) == 0 and payload.reason in ('finished', 'stopped'):
                 await self._start_idle_timer(player)
         except Exception:
-            pass
+            self.logger.exception("Track end handler failed")
 
     def _extract_artist_title(self, track: wavelink.Playable) -> tuple[str, str]:
         artist = getattr(track, 'author', None) or getattr(track, 'artist', None)
@@ -173,6 +177,7 @@ class MusicWavelinkCog(commands.Cog):
 
     def _create_controls(self, player: wavelink.Player) -> View:
         view = View(timeout=None)
+        has_current = player.current is not None and player.connected
         
         async def control_callback(interaction: discord.Interaction, action: str):
             if not player.connected:
@@ -216,16 +221,17 @@ class MusicWavelinkCog(commands.Cog):
             except Exception:
                 if not interaction.response.is_done():
                     await interaction.response.send_message("Action failed.", ephemeral=True)
+                self.logger.exception("Control callback failed")
         
         buttons = [
-            ("⏪", 'back', player.current is not None),
-            ("⏯️", 'pause', True),
-            ("⏩", 'fwd', player.current is not None),
-            ("⏭️", 'skip', True),
-            ("🔁", 'loop', True),
-            ("📜", 'lyrics', True),
-            ("💚", 'spotify', True),
-            ("❤️", 'youtube', True),
+            ("⏪", 'back', has_current),
+            ("⏯️", 'pause', has_current),
+            ("⏩", 'fwd', has_current),
+            ("⏭️", 'skip', has_current),
+            ("🔁", 'loop', has_current),
+            ("📜", 'lyrics', has_current),
+            ("💚", 'spotify', has_current),
+            ("❤️", 'youtube', has_current),
             ("📋", 'queue', True),
         ]
         
@@ -235,6 +241,14 @@ class MusicWavelinkCog(commands.Cog):
             view.add_item(button)
         
         return view
+
+    def _embed_state(self, player: wavelink.Player) -> tuple:
+        track = player.current
+        track_id = getattr(track, 'identifier', None) or getattr(track, 'uri', None) or str(track)
+        paused = getattr(player, 'paused', False)
+        loop_mode = getattr(player, 'loop_mode', False)
+        progress_bucket = int(self._get_elapsed_time(player) / 5000)
+        return (track_id, paused, loop_mode, progress_bucket)
 
     async def _start_periodic_updates(self, player: wavelink.Player):
         await self._stop_periodic_updates(player)
@@ -252,10 +266,14 @@ class MusicWavelinkCog(commands.Cog):
                         break
                     
                     if not getattr(player, 'paused', False):
+                        state = self._embed_state(player)
+                        if getattr(player, 'last_embed_state', None) == state:
+                            continue
                         try:
                             embed = self._create_now_playing_embed(player.current, player, show_progress=True)
                             view = self._create_controls(player)
                             await player.current_message.edit(embed=embed, view=view)
+                            player.last_embed_state = state
                             error_count = 0
                         except discord.NotFound:
                             break
@@ -268,10 +286,12 @@ class MusicWavelinkCog(commands.Cog):
             except asyncio.CancelledError:
                 pass
             except Exception:
-                pass
+                self.logger.exception("Periodic update failed")
             finally:
                 if hasattr(player, 'update_task'):
                     delattr(player, 'update_task')
+                if hasattr(player, 'last_embed_state'):
+                    delattr(player, 'last_embed_state')
         
         player.update_task = asyncio.create_task(periodic_update())
 
@@ -282,6 +302,10 @@ class MusicWavelinkCog(commands.Cog):
                 await player.update_task
             except asyncio.CancelledError:
                 pass
+        if hasattr(player, 'update_task'):
+            delattr(player, 'update_task')
+        if hasattr(player, 'last_embed_state'):
+            delattr(player, 'last_embed_state')
 
     async def _update_embed(self, player: wavelink.Player):
         if hasattr(player, 'current_message') and player.current:
@@ -289,8 +313,9 @@ class MusicWavelinkCog(commands.Cog):
                 embed = self._create_now_playing_embed(player.current, player, show_progress=True)
                 view = self._create_controls(player)
                 await player.current_message.edit(embed=embed, view=view)
+                player.last_embed_state = self._embed_state(player)
             except Exception:
-                pass
+                self.logger.exception("Failed to update now playing embed")
 
     async def _send_now_playing(self, ctx_or_channel, player: wavelink.Player):
         embed = self._create_now_playing_embed(player.current, player, show_progress=True)
@@ -309,7 +334,6 @@ class MusicWavelinkCog(commands.Cog):
             return int((time.time() - track_start_time) * 1000)
         return 0
 
-    @lru_cache(maxsize=128)
     def _format_duration(self, milliseconds: int) -> str:
         if not milliseconds:
             return "00:00"
@@ -337,24 +361,24 @@ class MusicWavelinkCog(commands.Cog):
         if not ctx.author.voice:
             raise commands.CommandError("Join a voice channel first.")
         player = ctx.voice_client
-        if not player or not player.connected:
-            for attempt in range(2):  # retry once
-                try:
-                    if player and player.connected:
-                        break
-                    player = await ctx.author.voice.channel.connect(cls=wavelink.Player)
-                    player.text_channel = ctx.channel
-                    if player.channel != ctx.author.voice.channel:
-                        await player.move_to(ctx.author.voice.channel)
-                    break
-                except Exception as e:
-                    if attempt == 1:
-                        raise commands.CommandError(f"Failed to connect to voice channel: {e}")
-                    await asyncio.sleep(1)  # wait a bit before retry
-        else:
+        if player and player.connected:
             player.text_channel = ctx.channel
             if player.channel != ctx.author.voice.channel:
                 await player.move_to(ctx.author.voice.channel)
+            return player
+
+        for attempt in range(2):
+            try:
+                new_player = await ctx.author.voice.channel.connect(cls=wavelink.Player)
+                if new_player.channel != ctx.author.voice.channel:
+                    await new_player.move_to(ctx.author.voice.channel)
+                new_player.text_channel = ctx.channel
+                player = new_player
+                break
+            except Exception as e:
+                if attempt == 1:
+                    raise commands.CommandError(f"Failed to connect to voice channel: {e}")
+                await asyncio.sleep(1)
         return player
 
     def _get_player(self, ctx: commands.Context) -> wavelink.Player:
@@ -366,15 +390,16 @@ class MusicWavelinkCog(commands.Cog):
     def _remove_from_queue(self, player: wavelink.Player, index: int) -> wavelink.Playable:
         if index < 1 or index > player.queue.count:
             raise ValueError("Invalid index")
-        
-        queue_list = list(player.queue)
-        removed_track = queue_list[index - 1]
-        
+        removed_track = None
+        kept_tracks = []
+        for idx, track in enumerate(player.queue, start=1):
+            if idx == index:
+                removed_track = track
+                continue
+            kept_tracks.append(track)
         player.queue.clear()
-        for i, track in enumerate(queue_list):
-            if i != index - 1:
-                player.queue.put(track)
-        
+        for track in kept_tracks:
+            player.queue.put(track)
         return removed_track
 
     @commands.command()
@@ -449,7 +474,6 @@ class MusicWavelinkCog(commands.Cog):
             return await interaction.response.send_message("No song is currently playing.", ephemeral=True)
         await interaction.response.defer(ephemeral=True)
         artist, title = self._extract_artist_title(player.current)
-        from urllib.parse import quote
         youtube_url = f"https://www.youtube.com/search?q={quote(f'{artist} {title}')}"
         await interaction.followup.send(f"🔍 **YouTube Search:** {youtube_url}", ephemeral=True)
 
@@ -463,9 +487,8 @@ class MusicWavelinkCog(commands.Cog):
         
         async def try_lyrics(try_artist: str, try_title: str) -> str:
             try:
-                from urllib.parse import quote
                 url = f"https://api.lyrics.ovh/v1/{quote(try_artist)}/{quote(try_title)}"
-                async with self.session.get(url) as response:
+                async with self.session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as response:
                     if response.status == 200:
                         try:
                             lyrics = (await response.json()).get('lyrics', '').strip()
@@ -477,12 +500,17 @@ class MusicWavelinkCog(commands.Cog):
                                 return 'success'
                         except Exception:
                             return 'server_error'
+                    if response.status == 429:
+                        return 'rate_limited'
                     return 'not_found' if response.status == 404 else ('server_error' if response.status >= 500 else 'not_found')
             except Exception:
                 return 'network_error'
         
         try:
             server_errors = 0
+            rate_limited = False
+            attempts_made = 0
+            MAX_ATTEMPTS = 2
             attempts = [
                 (artist, title),
                 (artist.split(',')[0].strip(), title) if ',' in artist else None,
@@ -491,13 +519,24 @@ class MusicWavelinkCog(commands.Cog):
             ]
             
             for attempt in filter(None, attempts):
+                if attempts_made >= MAX_ATTEMPTS:
+                    break
+                attempts_made += 1
                 result = await try_lyrics(*attempt)
                 if result == 'success':
                     return
+                if result == 'rate_limited':
+                    rate_limited = True
+                    break
                 elif result in ('server_error', 'network_error'):
                     server_errors += 1
             
-            msg = "The lyrics service is temporarily unavailable. Please try again later." if server_errors > 0 else "No lyrics found for this song. The lyrics database may not have this track, or it might be too new. Try searching for the official lyrics online."
+            if rate_limited:
+                msg = "The lyrics service is rate limiting requests right now. Please try again shortly."
+            elif server_errors > 0:
+                msg = "The lyrics service is temporarily unavailable. Please try again later."
+            else:
+                msg = "No lyrics found for this song. The lyrics database may not have this track, or it might be too new. Try searching for the official lyrics online."
             await interaction.followup.send(msg, ephemeral=True)
         except Exception:
             await interaction.followup.send("Failed to fetch lyrics. Please try again later.", ephemeral=True)
@@ -507,7 +546,6 @@ class MusicWavelinkCog(commands.Cog):
             return await interaction.response.send_message("No song is currently playing.", ephemeral=True)
         await interaction.response.defer(ephemeral=True)
         artist, title = self._extract_artist_title(player.current)
-        from urllib.parse import quote
         spotify_url = f"https://open.spotify.com/search/{quote(f'{artist} {title}')}"
         await interaction.followup.send(f"🔍 **Spotify Search:** {spotify_url}", ephemeral=True)
 
@@ -516,12 +554,14 @@ class MusicWavelinkCog(commands.Cog):
         if len(player.queue) == 0:
             return await interaction.followup.send("📋 **Queue is empty**", ephemeral=True)
         
-        queue_list = list(player.queue)
-        total_tracks = len(queue_list)
         tracks_per_page = 10
         
         queue_text = []
-        for idx, track in enumerate(queue_list[:tracks_per_page], start=1):
+        total_tracks = 0
+        for idx, track in enumerate(player.queue, start=1):
+            total_tracks = idx
+            if idx > tracks_per_page:
+                continue
             artist, title = self._extract_artist_title(track)
             duration_ms = getattr(track, 'duration', None) or getattr(track, 'length', None)
             duration_str = self._format_duration(duration_ms) if duration_ms else "?"
