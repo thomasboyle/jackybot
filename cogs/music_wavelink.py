@@ -184,12 +184,9 @@ class MusicWavelinkCog(commands.Cog):
                 return await interaction.response.send_message("Not connected to voice.", ephemeral=True)
             try:
                 if action == 'pause':
-                    if getattr(player, 'paused', False):
-                        await player.resume()
-                        message = "Resumed playback."
-                    else:
-                        await player.pause()
-                        message = "Paused playback."
+                    is_paused = getattr(player, 'paused', False)
+                    await player.pause(not is_paused)
+                    message = "Resumed playback." if is_paused else "Paused playback."
                     await interaction.response.send_message(message, ephemeral=True)
                     await self._update_embed(player)
                 elif action == 'skip':
