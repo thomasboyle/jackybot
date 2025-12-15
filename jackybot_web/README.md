@@ -71,12 +71,7 @@ The frontend will run on `http://localhost:5173`
 
 ### Bot Integration
 
-The bot automatically loads the `web_interface_listener` cog which:
-- Connects to the Flask backend via WebSocket
-- Listens for cog enable/disable events
-- Enforces cog restrictions per server in real-time
-
-Make sure to not disable the `web_interface_listener` cog in `bot.py`.
+Cog settings are managed through the web interface and stored in JSON files for persistence.
 
 ## Production Deployment
 
@@ -98,7 +93,7 @@ npm run build
 
 - **Backend**: Flask + Flask-SocketIO for REST API and WebSocket
 - **Frontend**: React 18 + Vite + Tailwind CSS
-- **Bot Integration**: Discord.py cog with socketio client
+- **Bot Integration**: Discord.py with JSON-based configuration
 - **Data Storage**: JSON files in `data/` directory
 
 ## API Endpoints

@@ -41,7 +41,6 @@ jackybot_web/
 Related files in main project:
 │
 ├── cogs/
-│   ├── web_interface_listener.py     # Bot cog for web interface integration
 │   └── cog_metadata.json             # Cog metadata for web UI
 │
 ├── data/
@@ -80,9 +79,7 @@ User toggles cog → Frontend → Flask (/api/servers/:id/settings) → cog_sett
 
 ### 4. Command Execution
 ```
-Discord User → Command → Bot → web_interface_listener.cog_check()
-                                       ↓
-                          Checks cog_settings.json for guild
+Discord User → Command → Bot → Cog Execution
                                        ↓
                           ┌────────────┴────────────┐
                           ↓                         ↓
@@ -107,8 +104,6 @@ Discord User → Command → Bot → web_interface_listener.cog_check()
 
 ### Bot Integration
 - **Dynamic Cog Control**: Enable/disable per server
-- **Real-time Enforcement**: Command checks
-- **WebSocket Client**: Connects to Flask backend
 - **Persistent Storage**: JSON-based configuration
 
 ## Color Scheme

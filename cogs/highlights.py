@@ -10,7 +10,6 @@ class HighlightsCog(commands.Cog):
         self.bot = bot
         self.star_emoji = "⭐"
         self.data_file = 'data/highlights_data.json'
-        self.settings_file = os.environ.get('COG_SETTINGS_PATH', 'data/cog_settings.json')
         self.highlighted_messages = set()
         self._image_extensions = ('.png', '.jpg', '.jpeg', '.gif', '.webp')
         self._video_extensions = ('.mp4', '.mov', '.avi', '.webm')
@@ -43,19 +42,6 @@ class HighlightsCog(commands.Cog):
 
     def get_highlight_channel_name(self, guild_id):
         """Get the configured highlight channel name for a server."""
-        try:
-            if os.path.exists(self.settings_file):
-                with open(self.settings_file, 'r') as f:
-                    settings = json.load(f)
-                    server_settings = settings.get(str(guild_id), {})
-                    highlights_settings = server_settings.get('highlights', {})
-                    channel_name = highlights_settings.get('channel_name')
-                    if channel_name:
-                        return channel_name
-        except Exception as e:
-            print(f"Error reading highlights channel setting: {e}")
-
-        # Default fallback
         return "teli-highlights"
 
     async def get_highlight_channel(self, guild):
