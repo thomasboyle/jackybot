@@ -4,12 +4,14 @@ import datetime
 import asyncio
 import re
 
+POLL_ARGS_PATTERN = re.compile(r'"([^"]*)"')
+EMOJI_NUMBERS = ("1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟")
+
 class PollCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.active_polls = {}
         self.user_votes = {}
-        self.emoji_numbers = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
         print("PollCog loaded successfully with enhanced UX!")
 
     def create_glass_embed(self, title, description="", color=0x2B2D31):
@@ -24,9 +26,7 @@ class PollCog(commands.Cog):
 
     def parse_poll_args(self, content):
         """Parse poll arguments from quoted strings"""
-        pattern = r'"([^"]*)"'
-        matches = re.findall(pattern, content)
-        return matches
+        return POLL_ARGS_PATTERN.findall(content)
 
     @commands.command(name="poll", aliases=["p"])
     async def poll(self, ctx, *, args=None):
@@ -126,7 +126,7 @@ class PollCog(commands.Cog):
         # Create options display with enhanced styling
         options_text = ""
         for i, option in enumerate(options):
-            emoji = self.emoji_numbers[i]
+            emoji = EMOJI_NUMBERS[i]
             options_text += f"{emoji} **{option}**\n"
         
         poll_embed.add_field(
@@ -188,10 +188,10 @@ class PollCog(commands.Cog):
             return
             
         emoji_str = str(reaction.emoji)
-        if emoji_str not in self.emoji_numbers:
+        if emoji_str not in EMOJI_NUMBERS:
             return
             
-        option_index = self.emoji_numbers.index(emoji_str)
+        option_index = EMOJI_NUMBERS.index(emoji_str)
         poll_data = self.active_polls[reaction.message.id]
         
         if option_index >= len(poll_data["choices"]):
@@ -201,7 +201,7 @@ class PollCog(commands.Cog):
         
         # Remove previous vote
         if user.id in poll_votes:
-            prev_emoji = self.emoji_numbers[poll_votes[user.id]]
+            prev_emoji = EMOJI_NUMBERS[poll_votes[user.id]]
             await reaction.message.remove_reaction(prev_emoji, user)
         
         poll_votes[user.id] = option_index
@@ -288,7 +288,7 @@ class PollCog(commands.Cog):
         results_text = ""
         
         for i, choice in enumerate(poll_data["choices"]):
-            emoji = self.emoji_numbers[i]
+            emoji = EMOJI_NUMBERS[i]
             reaction = discord.utils.get(message.reactions, emoji=emoji)
             count = (reaction.count - 1) if reaction else 0
             total_votes += count

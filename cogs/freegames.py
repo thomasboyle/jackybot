@@ -4,6 +4,7 @@ import datetime
 import aiohttp
 import json
 import os
+import aiofiles
 from collections import defaultdict
 import logging
 
@@ -16,34 +17,40 @@ class EpicGamesCog(commands.Cog):
         self.epic_api_url = "https://store-site-backend-static-ipv4.ak.epicgames.com/freeGamesPromotions?locale=en-US&country=US&allowCountries=US"
         self.epic_store_base = "https://store.epicgames.com/en-US/p/"
         self.epic_free_games_url = "https://store.epicgames.com/en-US/free-games"
-        self.load_announced_games()
         # Don't start the task here - let it start after the bot is ready
 
-    def cog_unload(self):
+    async def cog_load(self):
+        """Called when the cog is loaded"""
+        await self.load_announced_games()
+        # Task will start automatically via before_loop when bot is ready
+
+    async def cog_unload(self):
         if self.check_free_games.is_running():
             self.check_free_games.cancel()
-        self.save_announced_games()
+        await self.save_announced_games()
 
     async def cog_load(self):
         """Called when the cog is loaded"""
         # Task will start automatically via before_loop when bot is ready
         pass
 
-    def load_announced_games(self):
+    async def load_announced_games(self):
         try:
-            with open(self.announced_games_file, 'r') as f:
-                data = json.load(f)
-                # Convert string keys back to defaultdict structure
-                for guild_id, games in data.items():
-                    self.announced_games[guild_id] = games
+            async with aiofiles.open(self.announced_games_file, 'r') as f:
+                content = await f.read()
+                if content.strip():
+                    data = json.loads(content)
+                    # Convert string keys back to defaultdict structure
+                    for guild_id, games in data.items():
+                        self.announced_games[guild_id] = games
         except (FileNotFoundError, json.JSONDecodeError):
             pass
 
-    def save_announced_games(self):
+    async def save_announced_games(self):
         try:
             os.makedirs(os.path.dirname(self.announced_games_file), exist_ok=True)
-            with open(self.announced_games_file, 'w') as f:
-                json.dump(dict(self.announced_games), f, indent=2)
+            async with aiofiles.open(self.announced_games_file, 'w') as f:
+                await f.write(json.dumps(dict(self.announced_games), separators=(',', ':')))
         except Exception as e:
             print(f"Error saving announced games: {e}")
 
@@ -194,7 +201,7 @@ class EpicGamesCog(commands.Cog):
                         print(f"Error sending new game message: {e}")
 
         if changes:
-            self.save_announced_games()
+            await self.save_announced_games()
 
     @tasks.loop(hours=1)
     async def check_free_games(self):

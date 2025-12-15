@@ -9,18 +9,19 @@ from datetime import datetime, timedelta
 import json
 import time
 from collections import deque
-from functools import lru_cache
-import threading
+from functools import lru_cache, partial
 import aiofiles
 
 class SimpleCache:
-    """Simple thread-safe cache with TTL."""
+    """Simple async-safe cache with TTL."""
+    __slots__ = ('_cache', '_lock')
+
     def __init__(self):
         self._cache = {}
-        self._lock = threading.Lock()
+        self._lock = asyncio.Lock()
 
-    def get(self, key: str, default=None):
-        with self._lock:
+    async def get(self, key: str, default=None):
+        async with self._lock:
             if key in self._cache:
                 value, expiry = self._cache[key]
                 if time.time() < expiry:
@@ -29,8 +30,8 @@ class SimpleCache:
                     del self._cache[key]
             return default
 
-    def set(self, key: str, value, ttl_seconds: int = 300):  # Default 5 minutes TTL
-        with self._lock:
+    async def set(self, key: str, value, ttl_seconds: int = 300):  # Default 5 minutes TTL
+        async with self._lock:
             self._cache[key] = (value, time.time() + ttl_seconds)
 
 class GroqChat(commands.Cog):
@@ -115,6 +116,7 @@ class GroqChat(commands.Cog):
         Returns (is_allowed, seconds_until_reset)
         """
         now = time.time()
+        cutoff_time = now - window_seconds
 
         if entity_id not in rate_limits_dict:
             rate_limits_dict[entity_id] = (deque(), now)
@@ -122,10 +124,11 @@ class GroqChat(commands.Cog):
         requests, _ = rate_limits_dict[entity_id]
         rate_limits_dict[entity_id] = (requests, now)
 
-        while requests and requests[0] < now - window_seconds:
+        while requests and requests[0] < cutoff_time:
             requests.popleft()
 
-        if len(requests) < max_requests:
+        request_count = len(requests)
+        if request_count < max_requests:
             requests.append(now)
             return True, 0
 
@@ -146,24 +149,22 @@ class GroqChat(commands.Cog):
             try:
                 await asyncio.sleep(300)
                 now = time.time()
-                cleanup_threshold = 3600
+                cleanup_threshold = now - 3600
 
-                expired_users = [
-                    user_id for user_id, (requests, last_access) in self.user_rate_limits.items()
-                    if now - last_access > cleanup_threshold
-                ]
-                for user_id in expired_users:
-                    del self.user_rate_limits[user_id]
+                user_cleanup_count = 0
+                for user_id, (requests, last_access) in list(self.user_rate_limits.items()):
+                    if last_access < cleanup_threshold:
+                        del self.user_rate_limits[user_id]
+                        user_cleanup_count += 1
 
-                expired_guilds = [
-                    guild_id for guild_id, (requests, last_access) in self.guild_rate_limits.items()
-                    if now - last_access > cleanup_threshold
-                ]
-                for guild_id in expired_guilds:
-                    del self.guild_rate_limits[guild_id]
+                guild_cleanup_count = 0
+                for guild_id, (requests, last_access) in list(self.guild_rate_limits.items()):
+                    if last_access < cleanup_threshold:
+                        del self.guild_rate_limits[guild_id]
+                        guild_cleanup_count += 1
 
-                if expired_users or expired_guilds:
-                    print(f"Rate limit cleanup: Removed {len(expired_users)} users, {len(expired_guilds)} guilds")
+                if user_cleanup_count or guild_cleanup_count:
+                    print(f"Rate limit cleanup: Removed {user_cleanup_count} users, {guild_cleanup_count} guilds")
 
             except asyncio.CancelledError:
                 break
@@ -394,7 +395,8 @@ class GroqChat(commands.Cog):
             self.context_manager = self.bot.get_cog("ContextManager")
 
         content = message.content
-        guild_id = message.guild.id
+        guild = message.guild
+        guild_id = guild.id
 
         # Check if bot is mentioned
         if not self._is_mentioned(content):
@@ -531,8 +533,10 @@ class GroqChat(commands.Cog):
         # Remove <think> sections using pre-compiled regex
         formatted = self._think_pattern.sub('', response).strip()
 
-        # Ensure the response is under 2000 characters using slice assignment
-        return formatted[:1997] + "..." if len(formatted) > 2000 else formatted
+        # Ensure the response is under 2000 characters
+        if len(formatted) > 2000:
+            return formatted[:1997] + "..."
+        return formatted
 
     # Consolidated information access methods
 
@@ -546,9 +550,11 @@ class GroqChat(commands.Cog):
         """Get compact bot statistics for context."""
         try:
             command_stats = await self.load_json_file("data/command_stats.json")
-            total_servers = len(self.bot.guilds)
-            total_users = sum(guild.member_count for guild in self.bot.guilds)
-            return f"STATS: {total_servers} servers, {total_users} users, {sum(command_stats.values())} commands used"
+            guilds = self.bot.guilds
+            total_servers = len(guilds)
+            total_users = sum(guild.member_count for guild in guilds)
+            total_commands = sum(command_stats.values())
+            return f"STATS: {total_servers} servers, {total_users} users, {total_commands} commands used"
         except:
             return ""
 
@@ -609,7 +615,7 @@ class GroqChat(commands.Cog):
     async def load_json_file(self, filename: str) -> Dict:
         """Helper method to load JSON files safely with caching."""
         cache_key = f"json_{filename}"
-        cached_data = self._cache.get(cache_key)
+        cached_data = await self._cache.get(cache_key)
         if cached_data is not None:
             return cached_data
 
@@ -618,7 +624,7 @@ class GroqChat(commands.Cog):
                 async with aiofiles.open(filename, 'r') as f:
                     content = await f.read()
                     data = json.loads(content)
-                    self._cache.set(cache_key, data, ttl_seconds=300)
+                    await self._cache.set(cache_key, data, ttl_seconds=300)
                     return data
         except Exception as e:
             print(f"Error loading JSON file {filename}: {e}")

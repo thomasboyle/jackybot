@@ -5,6 +5,7 @@ import asyncio
 import io
 import gc
 import time
+from functools import partial
 from .model_manager import model_manager
 
 class ImageGeneration(commands.Cog):
@@ -41,7 +42,7 @@ class ImageGeneration(commands.Cog):
                 height=height,
                 num_inference_steps=num_inference_steps,
                 guidance_scale=guidance_scale,
-                generator=torch.Generator(device=model_manager.device).manual_seed(int(time.time()))
+                generator=torch.Generator(device=model_manager.device).manual_seed(int(time.time_ns() // 1_000_000))
             )
             
             image = result.images[0]

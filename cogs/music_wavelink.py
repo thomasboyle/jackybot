@@ -6,6 +6,7 @@ import io
 import time
 from typing import Optional
 from urllib.parse import quote
+from functools import partial
 import aiohttp
 import discord
 from discord.ext import commands
@@ -430,8 +431,9 @@ class MusicWavelinkCog(commands.Cog):
             return await ctx.reply("No results found.")
         
         if isinstance(tracks, wavelink.Playlist):
+            requester = ctx.author
             for track in tracks:
-                track.requester = ctx.author
+                track.requester = requester
                 player.queue.put(track)
             await ctx.reply(f"Queued playlist: {tracks.name} ({len(tracks)} tracks)")
         else:
@@ -439,7 +441,9 @@ class MusicWavelinkCog(commands.Cog):
             track.requester = ctx.author
             if player.playing:
                 player.queue.put(track)
-                await ctx.reply(f"Queued #{player.queue.count + 1}: {track.title or 'Unknown Title'}")
+                queue_pos = player.queue.count + 1
+                title = track.title or 'Unknown Title'
+                await ctx.reply(f"Queued #{queue_pos}: {title}")
             else:
                 player.last_requester = ctx.author
                 await player.play(track)
@@ -459,12 +463,15 @@ class MusicWavelinkCog(commands.Cog):
 
     def _parse_artist_title(self, title: str) -> tuple[str, str]:
         cleaned = LYRICS_WHITESPACE_REGEX.sub(' ', LYRICS_CLEANUP_REGEX.sub('', title)).strip()
-        for sep in [' - ', ' – ', ' — ', ' | ', ' : ']:
+        separators = (' - ', ' – ', ' — ', ' | ', ' : ')
+
+        for sep in separators:
             if sep in cleaned:
                 parts = cleaned.split(sep, 1)
                 if len(parts) == 2:
                     artist_part, title_part = parts[0].strip(), parts[1].strip()
-                    if ',' in artist_part or (len(artist_part) < 40 and len(title_part) < 100):
+                    artist_len, title_len = len(artist_part), len(title_part)
+                    if ',' in artist_part or (artist_len < 40 and title_len < 100):
                         return artist_part, title_part
                     else:
                         return title_part, artist_part
@@ -480,9 +487,10 @@ class MusicWavelinkCog(commands.Cog):
     def _create_progress_bar(self, current_ms: int, total_ms: int, length: int = 20) -> str:
         if total_ms <= 0:
             return "░░░░░░░░░░░░░░░░░░░░ 0%"
-        progress = min(current_ms / total_ms, 1.0)
-        filled = int(progress * length)
-        percent = int(progress * 100)
+        if current_ms >= total_ms:
+            return f"{'▓' * length} 100%"
+        filled = (current_ms * length) // total_ms
+        percent = (current_ms * 100) // total_ms
         return f"{'▓' * filled}{'░' * (length - filled)} {percent}%"
 
     async def get_youtube_link(self, interaction: discord.Interaction, player: wavelink.Player):

@@ -5,6 +5,7 @@ import os
 import tempfile
 import time
 import gc
+from functools import partial
 from concurrent.futures import ThreadPoolExecutor
 from transformers import pipeline
 import scipy.io.wavfile

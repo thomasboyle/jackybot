@@ -4,15 +4,23 @@ from discord.ext import commands
 from typing import List
 import json
 import os
+from functools import partial
 
 
 def get_manageable_roles(guild: discord.Guild) -> List[discord.Role]:
     bot_member = guild.me
-    bot_position = bot_member.top_role.position if bot_member else 0
-    roles = [
-        r for r in guild.roles
-        if r.name != "@everyone" and not r.managed and r.position < bot_position
-    ]
+    if not bot_member:
+        return []
+
+    bot_position = bot_member.top_role.position
+    roles = []
+
+    for role in guild.roles:
+        if (role.name != "@everyone" and
+            not role.managed and
+            role.position < bot_position):
+            roles.append(role)
+
     roles.sort(key=lambda r: r.position, reverse=True)
     return roles[:25]
 
@@ -52,8 +60,11 @@ class RoleSelect(discord.ui.Select):
         manageable_roles = get_manageable_roles(guild)
         for role in manageable_roles:
             emoji = "✅" if role.id in self.current_auto_roles else "⭕"
-            member_count = sum(1 for m in role.members if not m.bot)
-            
+            member_count = 0
+            for member in role.members:
+                if not member.bot:
+                    member_count += 1
+
             options.append(discord.SelectOption(
                 label=role.name[:100],
                 value=str(role.id),

@@ -5,6 +5,7 @@ import json
 import os
 import aiohttp
 import asyncio
+import aiofiles
 from typing import Dict, List, Optional
 import re
 
@@ -26,12 +27,14 @@ class MovieSuggestionModal(ui.Modal):
         movie_title = self.movie_title.value.strip()
 
         # Check if movie already exists in suggestions
-        if any(suggestion['title'].lower() == movie_title.lower() for suggestion in self.cog.suggestions):
-            await interaction.response.send_message(
-                f"❌ '{movie_title}' is already in the suggestions list!",
-                ephemeral=True
-            )
-            return
+        movie_title_lower = movie_title.lower()
+        for suggestion in self.cog.suggestions:
+            if suggestion['title'].lower() == movie_title_lower:
+                await interaction.response.send_message(
+                    f"❌ '{movie_title}' is already in the suggestions list!",
+                    ephemeral=True
+                )
+                return
 
         # Add to suggestions
         suggestion = {
@@ -62,50 +65,57 @@ class MoviesCog(commands.Cog):
         self.watchlist: List[Dict] = []
         self.finished: List[Dict] = []
 
-        self.load_data()
+        # Data will be loaded in cog_load
 
-    def load_data(self):
+    async def cog_load(self):
+        """Async initialization after cog is loaded."""
+        await self.load_data()
+
+    async def load_data(self):
         """Load data from JSON files, creating them if they don't exist"""
         # Load suggestions
         if os.path.exists(self.suggestions_file):
-            with open(self.suggestions_file, 'r') as f:
-                self.suggestions = json.load(f)
+            async with aiofiles.open(self.suggestions_file, 'r') as f:
+                content = await f.read()
+                self.suggestions = json.loads(content) if content.strip() else []
         else:
             self.suggestions = []
-            with open(self.suggestions_file, 'w') as f:
-                json.dump(self.suggestions, f, indent=4)
+            async with aiofiles.open(self.suggestions_file, 'w') as f:
+                await f.write(json.dumps(self.suggestions, separators=(',', ':')))
 
         # Load watchlist
         if os.path.exists(self.watchlist_file):
-            with open(self.watchlist_file, 'r') as f:
-                self.watchlist = json.load(f)
+            async with aiofiles.open(self.watchlist_file, 'r') as f:
+                content = await f.read()
+                self.watchlist = json.loads(content) if content.strip() else []
         else:
             self.watchlist = []
-            with open(self.watchlist_file, 'w') as f:
-                json.dump(self.watchlist, f, indent=4)
+            async with aiofiles.open(self.watchlist_file, 'w') as f:
+                await f.write(json.dumps(self.watchlist, separators=(',', ':')))
 
         # Load finished movies
         if os.path.exists(self.finished_file):
-            with open(self.finished_file, 'r') as f:
-                self.finished = json.load(f)
+            async with aiofiles.open(self.finished_file, 'r') as f:
+                content = await f.read()
+                self.finished = json.loads(content) if content.strip() else []
         else:
             self.finished = []
-            with open(self.finished_file, 'w') as f:
-                json.dump(self.finished, f, indent=4)
+            async with aiofiles.open(self.finished_file, 'w') as f:
+                await f.write(json.dumps(self.finished, separators=(',', ':')))
 
     async def save_data(self):
         """Save data to JSON files"""
         # Save suggestions
-        with open(self.suggestions_file, 'w') as f:
-            json.dump(self.suggestions, f, indent=4)
+        async with aiofiles.open(self.suggestions_file, 'w') as f:
+            await f.write(json.dumps(self.suggestions, separators=(',', ':')))
 
         # Save watchlist
-        with open(self.watchlist_file, 'w') as f:
-            json.dump(self.watchlist, f, indent=4)
+        async with aiofiles.open(self.watchlist_file, 'w') as f:
+            await f.write(json.dumps(self.watchlist, separators=(',', ':')))
 
         # Save finished movies
-        with open(self.finished_file, 'w') as f:
-            json.dump(self.finished, f, indent=4)
+        async with aiofiles.open(self.finished_file, 'w') as f:
+            await f.write(json.dumps(self.finished, separators=(',', ':')))
 
     async def fetch_movie_details(self, movie_title: str) -> Optional[Dict]:
         """Fetch movie details from OMDB API"""
