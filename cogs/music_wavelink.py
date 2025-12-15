@@ -15,6 +15,11 @@ import wavelink
 LYRICS_CLEANUP_REGEX = re.compile(r'[\[\(\{].*?[\]\)\}]')
 LYRICS_WHITESPACE_REGEX = re.compile(r'\s+')
 LYRICS_NEWLINES_REGEX = re.compile(r'\n{3,}')
+YOUTUBE_PATTERNS = [
+    re.compile(r'(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})'),
+    re.compile(r'youtube\.com\/embed\/([a-zA-Z0-9_-]{11})'),
+    re.compile(r'youtube\.com\/v\/([a-zA-Z0-9_-]{11})')
+]
 
 
 class MusicWavelinkCog(commands.Cog):
@@ -140,26 +145,27 @@ class MusicWavelinkCog(commands.Cog):
         return artist, title
 
     def _create_now_playing_embed(self, track: wavelink.Playable, player: wavelink.Player, show_progress: bool = False) -> discord.Embed:
-        color = 0x5865F2 if not player.playing else (0xFEE75C if getattr(player, 'paused', False) else 0x57F287)
+        paused = getattr(player, 'paused', False)
+        loop_mode = getattr(player, 'loop_mode', False)
+        color = 0x5865F2 if not player.playing else (0xFEE75C if paused else 0x57F287)
         embed = discord.Embed(title="Now Playing", color=color, timestamp=discord.utils.utcnow())
-        
+
         artist, title = self._extract_artist_title(track)
         embed.description = f"**Artist:** {artist}\n**Title:** {title}"
-        
+
         duration_ms = getattr(track, 'duration', None) or getattr(track, 'length', None) or getattr(track, 'duration_ms', None)
         current_ms = self._get_elapsed_time(player) if show_progress else 0
-        
+
         if duration_ms:
             current_time_str = self._format_duration(current_ms) if current_ms > 0 else "0:00"
             embed.add_field(name="⏰ Duration", value=f"{current_time_str} / {self._format_duration(duration_ms)}", inline=True)
-        
-        paused = getattr(player, 'paused', False)
-        embed.add_field(name="Status", value=f"{'⏸️ Paused' if paused else '▶️ Playing'}", inline=True)
-        embed.add_field(name="🔁 Loop", value="On" if getattr(player, 'loop_mode', False) else "Off", inline=True)
-        
+
+        embed.add_field(name="Status", value="⏸️ Paused" if paused else "▶️ Playing", inline=True)
+        embed.add_field(name="🔁 Loop", value="On" if loop_mode else "Off", inline=True)
+
         if show_progress and duration_ms and duration_ms > 0:
             embed.add_field(name="Progress", value=self._create_progress_bar(current_ms, duration_ms), inline=False)
-        
+
         thumbnail = getattr(track, 'thumbnail', None) or getattr(track, 'artwork_url', None)
         if not thumbnail:
             track_uri = getattr(track, 'uri', None)
@@ -167,26 +173,26 @@ class MusicWavelinkCog(commands.Cog):
                 thumbnail = self._get_youtube_thumbnail(track_uri)
         if thumbnail:
             embed.set_image(url=thumbnail)
-        
+
         requester = getattr(player, 'last_requester', getattr(track, 'requester', None))
         if requester:
             requester_name = requester.display_name if hasattr(requester, 'display_name') else str(requester)
             embed.set_footer(text=f"Requested by {requester_name}", icon_url=requester.avatar.url if hasattr(requester, 'avatar') and requester.avatar else None)
-        
+
         return embed
 
     def _create_controls(self, player: wavelink.Player) -> View:
         view = View(timeout=None)
         has_current = player.current is not None and player.connected
-        
+
         async def control_callback(interaction: discord.Interaction, action: str):
             if not player.connected:
                 return await interaction.response.send_message("Not connected to voice.", ephemeral=True)
             try:
                 if action == 'pause':
-                    is_paused = getattr(player, 'paused', False)
-                    await player.pause(not is_paused)
-                    message = "Resumed playback." if is_paused else "Paused playback."
+                    paused = getattr(player, 'paused', False)
+                    await player.pause(not paused)
+                    message = "Resumed playback." if paused else "Paused playback."
                     await interaction.response.send_message(message, ephemeral=True)
                     await self._update_embed(player)
                 elif action == 'skip':
@@ -195,7 +201,8 @@ class MusicWavelinkCog(commands.Cog):
                     await player.skip()
                     await interaction.response.send_message(f"{interaction.user.name} skipped", ephemeral=True)
                 elif action == 'loop':
-                    player.loop_mode = not getattr(player, 'loop_mode', False)
+                    loop_mode = getattr(player, 'loop_mode', False)
+                    player.loop_mode = not loop_mode
                     await interaction.response.send_message(f"Loop {'on' if player.loop_mode else 'off'}", ephemeral=True)
                     await self._update_embed(player)
                 elif action in ('fwd', 'back'):
@@ -244,33 +251,39 @@ class MusicWavelinkCog(commands.Cog):
         track_id = getattr(track, 'identifier', None) or getattr(track, 'uri', None) or str(track)
         paused = getattr(player, 'paused', False)
         loop_mode = getattr(player, 'loop_mode', False)
-        progress_bucket = int(self._get_elapsed_time(player) / 5000)
+        progress_bucket = int(self._get_elapsed_time(player) // 5000)
         return (track_id, paused, loop_mode, progress_bucket)
 
     async def _start_periodic_updates(self, player: wavelink.Player):
         await self._stop_periodic_updates(player)
-        
+
         UPDATE_INTERVAL = 30
         MAX_CONSECUTIVE_ERRORS = 3
-        
+
         async def periodic_update():
             error_count = 0
+            last_state = None
+            last_embed = None
+            last_view = None
             try:
                 while player.connected and player.current and hasattr(player, 'current_message'):
                     await asyncio.sleep(UPDATE_INTERVAL)
-                    
+
                     if not player.connected or not player.current or not hasattr(player, 'current_message'):
                         break
-                    
-                    if not getattr(player, 'paused', False):
-                        state = self._embed_state(player)
-                        if getattr(player, 'last_embed_state', None) == state:
+
+                    paused = getattr(player, 'paused', False)
+                    if not paused:
+                        current_state = self._embed_state(player)
+                        if current_state == last_state:
                             continue
                         try:
                             embed = self._create_now_playing_embed(player.current, player, show_progress=True)
                             view = self._create_controls(player)
                             await player.current_message.edit(embed=embed, view=view)
-                            player.last_embed_state = state
+                            last_state = current_state
+                            last_embed = embed
+                            last_view = view
                             error_count = 0
                         except discord.NotFound:
                             break
@@ -343,8 +356,13 @@ class MusicWavelinkCog(commands.Cog):
         if not player.current:
             return
         current_pos = getattr(player, 'position', 0) or 0
-        track_duration = getattr(player.current, 'duration', None) or getattr(player.current, 'length', None) or getattr(player.current, 'duration_ms', None)
-        new_pos = max(0, min(current_pos + (seconds * 1000), track_duration) if track_duration else current_pos + (seconds * 1000))
+        track = player.current
+        track_duration = getattr(track, 'duration', None) or getattr(track, 'length', None) or getattr(track, 'duration_ms', None)
+        seek_ms = seconds * 1000
+        if track_duration:
+            new_pos = max(0, min(current_pos + seek_ms, track_duration))
+        else:
+            new_pos = max(0, current_pos + seek_ms)
         await player.seek(new_pos)
 
     def _get_search_query(self, search: str) -> str:
@@ -388,14 +406,14 @@ class MusicWavelinkCog(commands.Cog):
         if index < 1 or index > player.queue.count:
             raise ValueError("Invalid index")
         removed_track = None
-        kept_tracks = []
+        temp_queue = []
         for idx, track in enumerate(player.queue, start=1):
             if idx == index:
                 removed_track = track
-                continue
-            kept_tracks.append(track)
+            else:
+                temp_queue.append(track)
         player.queue.clear()
-        for track in kept_tracks:
+        for track in temp_queue:
             player.queue.put(track)
         return removed_track
 
@@ -453,8 +471,8 @@ class MusicWavelinkCog(commands.Cog):
         return "", cleaned
 
     def _get_youtube_thumbnail(self, url: str) -> Optional[str]:
-        for pattern in [r'(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})', r'youtube\.com\/embed\/([a-zA-Z0-9_-]{11})', r'youtube\.com\/v\/([a-zA-Z0-9_-]{11})']:
-            match = re.search(pattern, url)
+        for pattern in YOUTUBE_PATTERNS:
+            match = pattern.search(url)
             if match:
                 return f"https://img.youtube.com/vi/{match.group(1)}/maxresdefault.jpg"
         return None
@@ -464,7 +482,8 @@ class MusicWavelinkCog(commands.Cog):
             return "░░░░░░░░░░░░░░░░░░░░ 0%"
         progress = min(current_ms / total_ms, 1.0)
         filled = int(progress * length)
-        return f"{'▓' * filled}{'░' * (length - filled)} {int(progress * 100)}%"
+        percent = int(progress * 100)
+        return f"{'▓' * filled}{'░' * (length - filled)} {percent}%"
 
     async def get_youtube_link(self, interaction: discord.Interaction, player: wavelink.Player):
         if not player.current:
@@ -481,45 +500,48 @@ class MusicWavelinkCog(commands.Cog):
             return await interaction.response.send_message("Bot is still initializing. Please try again in a moment.", ephemeral=True)
         await interaction.response.defer(ephemeral=True)
         artist, title = self._extract_artist_title(player.current)
-        
+        timeout = aiohttp.ClientTimeout(total=5)
+
         async def try_lyrics(try_artist: str, try_title: str) -> str:
             try:
                 url = f"https://api.lyrics.ovh/v1/{quote(try_artist)}/{quote(try_title)}"
-                async with self.session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as response:
-                    if response.status == 200:
+                async with self.session.get(url, timeout=timeout) as response:
+                    status = response.status
+                    if status == 200:
                         try:
-                            lyrics = (await response.json()).get('lyrics', '').strip()
+                            data = await response.json()
+                            lyrics = data.get('lyrics', '').strip()
                             if lyrics:
                                 lyrics = LYRICS_NEWLINES_REGEX.sub('\n\n', lyrics)
-                                lyrics_file = io.BytesIO(f"{try_artist} - {try_title}\n\n{lyrics}".encode('utf-8'))
+                                content = f"{try_artist} - {try_title}\n\n{lyrics}"
+                                lyrics_file = io.BytesIO(content.encode('utf-8'))
                                 embed = discord.Embed(title="📝 Lyrics", description=f"**{try_title}** by **{try_artist}**\n\nLyrics are attached as a text file above!", color=0xFF6B35)
                                 await interaction.followup.send(embed=embed, file=discord.File(lyrics_file, filename=f"{try_artist} - {try_title} - Lyrics.txt"), ephemeral=True)
                                 return 'success'
                         except Exception:
                             return 'server_error'
-                    if response.status == 429:
+                    if status == 429:
                         return 'rate_limited'
-                    return 'not_found' if response.status == 404 else ('server_error' if response.status >= 500 else 'not_found')
+                    return 'not_found' if status == 404 else ('server_error' if status >= 500 else 'not_found')
             except Exception:
                 return 'network_error'
-        
+
         try:
             server_errors = 0
             rate_limited = False
             attempts_made = 0
             MAX_ATTEMPTS = 2
-            attempts = [
-                (artist, title),
-                (artist.split(',')[0].strip(), title) if ',' in artist else None,
-                (title, title),
-                *[(a, title) for a in ["Various Artists", "Various", "Classic", "Popular"] if a != artist]
-            ]
-            
-            for attempt in filter(None, attempts):
+            base_attempts = [(artist, title)]
+            if ',' in artist:
+                base_attempts.append((artist.split(',')[0].strip(), title))
+            fallback_attempts = [(title, title)] + [(a, title) for a in ["Various Artists", "Various", "Classic", "Popular"] if a != artist]
+            attempts = base_attempts + fallback_attempts
+
+            for try_artist, try_title in attempts:
                 if attempts_made >= MAX_ATTEMPTS:
                     break
                 attempts_made += 1
-                result = await try_lyrics(*attempt)
+                result = await try_lyrics(try_artist, try_title)
                 if result == 'success':
                     return
                 if result == 'rate_limited':
@@ -527,7 +549,7 @@ class MusicWavelinkCog(commands.Cog):
                     break
                 elif result in ('server_error', 'network_error'):
                     server_errors += 1
-            
+
             if rate_limited:
                 msg = "The lyrics service is rate limiting requests right now. Please try again shortly."
             elif server_errors > 0:
@@ -548,24 +570,24 @@ class MusicWavelinkCog(commands.Cog):
 
     async def show_queue(self, interaction: discord.Interaction, player: wavelink.Player):
         await interaction.response.defer(ephemeral=True)
-        if len(player.queue) == 0:
+        queue_count = len(player.queue)
+        if queue_count == 0:
             return await interaction.followup.send("📋 **Queue is empty**", ephemeral=True)
-        
+
         tracks_per_page = 10
-        
         queue_text = []
-        total_tracks = 0
-        for idx, track in enumerate(player.queue, start=1):
-            total_tracks = idx
-            if idx > tracks_per_page:
-                continue
+        display_count = min(queue_count, tracks_per_page)
+
+        for idx in range(display_count):
+            track = player.queue[idx]
             artist, title = self._extract_artist_title(track)
             duration_ms = getattr(track, 'duration', None) or getattr(track, 'length', None)
             duration_str = self._format_duration(duration_ms) if duration_ms else "?"
-            queue_text.append(f"**{idx}.** {artist} - {title} `[{duration_str}]`")
-        
+            queue_text.append(f"**{idx + 1}.** {artist} - {title} `[{duration_str}]`")
+
         embed = discord.Embed(title="📋 Queue", color=0x5865F2, timestamp=discord.utils.utcnow(), description="\n".join(queue_text))
-        embed.set_footer(text=f"Showing 10 of {total_tracks} tracks" if total_tracks > tracks_per_page else f"{total_tracks} track{'s' if total_tracks != 1 else ''} in queue")
+        footer_text = f"Showing {display_count} of {queue_count} tracks" if queue_count > tracks_per_page else f"{queue_count} track{'s' if queue_count != 1 else ''} in queue"
+        embed.set_footer(text=footer_text)
         await interaction.followup.send(embed=embed, ephemeral=True)
 
 async def setup(bot):
