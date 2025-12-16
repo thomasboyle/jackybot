@@ -7,200 +7,215 @@ import aiofiles
 from discord.ext import commands
 from gtts import gTTS
 from groq import Groq
-import json
 import time
 import signal
 import sys
-from functools import partial
 
-# --- Configuration ---
-class Config:
-    CHANNEL_ID = 1132395937180950599
-    AUTHORIZED_USER_ID = 103873926622363648
-    EMBED_COLOR = 0x0099ff
-    MAX_DELETE_MESSAGES = 5
-    SAVE_COOLDOWN = 5
-    CLEANUP_INTERVAL = 1800
-    MAX_MESSAGES = 50
-    MAX_PROCESSED_MESSAGES = 500
-    MAX_CONNECTIONS = 2
-    MAX_WORKERS = 2
-    COOLDOWN_RATE = 1
-    COOLDOWN_PER = 120
+try:
+    import orjson as json
+    _ORJSON = True
+except ImportError:
+    import json
+    _ORJSON = False
 
-# Bot setup
+_CHANNEL_ID = 1132395937180950599
+_AUTH_USER_ID = 103873926622363648
+_EMBED_COLOR = 0x0099ff
+_MAX_DEL_MSG = 5
+_SAVE_CD = 5
+_CLEANUP_INT = 1800
+_MAX_MSG = 50
+_MAX_CONN = 2
+_CD_RATE = 1
+_CD_PER = 120
+_JACKYBOT_CHAT = "jackybot-chat"
+_CONN_MASK = _MAX_CONN - 1
+_NS_TO_MS = 1_000_000
+_RATE_SLEEP = 0.2
+_JSON_SEP = (',', ':')
+_DATA_PATH = 'data/jackychat_channels.json'
+_DISABLED_COGS = frozenset(('image_gen', 'model_manager', 'music', 'quote', 'server_manager'))
+
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 intents.voice_states = True
-bot = commands.Bot(command_prefix='!', intents=intents, chunk_guilds_at_startup=False, case_insensitive=True, max_messages=Config.MAX_MESSAGES)
+bot = commands.Bot(command_prefix='!', intents=intents, chunk_guilds_at_startup=False, case_insensitive=True, max_messages=_MAX_MSG)
 
-# Connection pool
 class ConnectionPool:
-    __slots__ = ('connections', '_index', '_mask')
+    __slots__ = ('connections', '_index')
 
-    def __init__(self, max_connections=Config.MAX_CONNECTIONS):
-        if not (api_key := os.environ.get("GROQ_API_KEY")):
+    def __init__(self):
+        api_key = os.environ.get("GROQ_API_KEY")
+        if not api_key:
             raise ValueError("GROQ_API_KEY environment variable not set.")
-        self.connections = tuple(Groq(api_key=api_key) for _ in range(max_connections))
+        self.connections = tuple(Groq(api_key=api_key) for _ in range(_MAX_CONN))
         self._index = 0
-        self._mask = max_connections - 1
 
     def get_connection(self):
-        conn = self.connections[self._index]
-        self._index = (self._index + 1) & self._mask
-        return conn
+        idx = self._index
+        self._index = (idx + 1) & _CONN_MASK
+        return self.connections[idx]
 
     async def close(self):
+        iscoro = asyncio.iscoroutine
         for conn in self.connections:
-            close_attr = getattr(conn, 'close', None)
-            if close_attr is None:
-                continue
-            result = close_attr()
-            if asyncio.iscoroutine(result):
-                await result
+            close_fn = getattr(conn, 'close', None)
+            if close_fn is not None:
+                result = close_fn()
+                if iscoro(result):
+                    await result
 
-# Bot state
 class BotState:
     __slots__ = ('jackychat_channels', 'processed_messages', 'last_save_time', 'last_cleanup_time', 'broadcast_semaphore')
 
     def __init__(self):
         self.jackychat_channels = {}
         self.processed_messages = set()
-        self.last_save_time = 0
+        self.last_save_time = 0.0
         self.last_cleanup_time = time.time()
         self.broadcast_semaphore = asyncio.Semaphore(5)
 
 bot.pool = ConnectionPool()
 bot.state = BotState()
 
-# Cleanup task
-async def cleanup_task():
-    while True:
-        await asyncio.sleep(Config.CLEANUP_INTERVAL)
-        bot.state.processed_messages.clear()
-        bot.state.last_cleanup_time = time.time()
+_state = bot.state
+_processed = _state.processed_messages
+_channels = _state.jackychat_channels
+_semaphore = _state.broadcast_semaphore
+_bot_user = None
 
-# Setup hook
+async def cleanup_task():
+    sleep = asyncio.sleep
+    interval = _CLEANUP_INT
+    processed = _processed
+    state = _state
+    get_time = time.time
+    while True:
+        await sleep(interval)
+        processed.clear()
+        state.last_cleanup_time = get_time()
+
 async def setup_hook():
-    cog_files = [f[:-3] for f in os.listdir('./cogs') if f.endswith('.py')]
-    # Exclude AI image generation and model management cogs, and cogs with missing assets
-    disabled_cogs = ['image_gen', 'model_manager', 'music', 'quote', 'server_manager']
-    cog_files = [f for f in cog_files if f not in disabled_cogs]
-    results = await asyncio.gather(*(bot.load_extension(f'cogs.{f}') for f in cog_files), return_exceptions=True)
+    listdir = os.listdir
+    disabled = _DISABLED_COGS
+    load_ext = bot.load_extension
+    cog_files = [f[:-3] for f in listdir('./cogs') if f[-3:] == '.py' and f[:-3] not in disabled]
+    results = await asyncio.gather(*(load_ext(f'cogs.{f}') for f in cog_files), return_exceptions=True)
     for filename, result in zip(cog_files, results):
         if isinstance(result, Exception):
             print(f'Failed to load {filename}: {result}')
-    
     asyncio.create_task(cleanup_task())
 
 bot.setup_hook = setup_hook
 
-# Ready handler (fires once)
 _ready_once = False
 
 @bot.event
 async def on_ready():
-    global _ready_once
+    global _ready_once, _bot_user
     if _ready_once:
         return
     _ready_once = True
+    _bot_user = bot.user
 
     await load_jackychat_channels()
     print('Bot is ready')
 
-    channel = bot.get_channel(Config.CHANNEL_ID)
+    channel = bot.get_channel(_CHANNEL_ID)
     if channel:
         try:
             await channel.send('JackyBot Online...')
         except discord.Forbidden:
-            print(f"Missing permissions to send message in channel {Config.CHANNEL_ID}")
+            print(f"Missing permissions in channel {_CHANNEL_ID}")
         except Exception as e:
             print(f"Failed to send startup message: {e}")
 
-    # Ensure Opus is loaded for voice support
+    opus = discord.opus
     try:
-        if not discord.opus.is_loaded():
+        if not opus.is_loaded():
             opus_path = ctypes.util.find_library('opus')
             if opus_path:
-                discord.opus.load_opus(opus_path)
+                opus.load_opus(opus_path)
     except Exception as e:
-        print(f"Warning: Opus library not loaded ({e}). Voice may fail. Install Opus or ensure it is on PATH.")
+        print(f"Warning: Opus library not loaded ({e}). Voice may fail.")
 
-# Message handler
 @bot.event
 async def on_message(message):
-    if message.author == bot.user or not message.guild:
+    author = message.author
+    if author.id == _bot_user.id:
+        return
+    guild = message.guild
+    if guild is None:
         return
 
-    message_id = f"{message.channel.id}-{message.id}"
-    if message_id in bot.state.processed_messages:
+    msg_channel = message.channel
+    channel_id = msg_channel.id
+    msg_id = message.id
+    key = (channel_id << 64) | msg_id
+    
+    processed = _processed
+    if key in processed:
         return
-    bot.state.processed_messages.add(message_id)
+    processed.add(key)
 
-    channel_name = message.channel.name
-    if "jackybot-chat" in channel_name:
-        guild_id = message.guild.id
-        state_channels = bot.state.jackychat_channels
-        current_channel = state_channels.get(guild_id)
+    channel_name = msg_channel.name
+    if _JACKYBOT_CHAT in channel_name:
+        guild_id = guild.id
+        channels = _channels
+        current = channels.get(guild_id)
 
-        if current_channel is not message.channel:
-            state_channels[guild_id] = message.channel
+        if current is not msg_channel:
+            channels[guild_id] = msg_channel
             asyncio.create_task(save_jackychat_channels())
 
-        embed = discord.Embed(title=f"Broadcast from {message.guild.name}", description=f"{message.author.mention}: {message.content}", color=Config.EMBED_COLOR)
-        if message.attachments:
-            embed.set_image(url=message.attachments[0].url)
+        embed = discord.Embed(
+            title=f"Broadcast from {guild.name}",
+            description=f"{author.mention}: {message.content}",
+            color=_EMBED_COLOR
+        )
+        attachments = message.attachments
+        if attachments:
+            embed.set_image(url=attachments[0].url)
 
-        semaphore = bot.state.broadcast_semaphore
-        tasks = [
-            send_with_rate_limit(ch, embed, semaphore)
-            for gid, ch in state_channels.items()
-            if gid != guild_id and ch
-        ]
-        if tasks:
-            asyncio.create_task(asyncio.gather(*tasks, return_exceptions=True))
+        targets = [(gid, ch) for gid, ch in channels.items() if gid != guild_id and ch is not None]
+        if targets:
+            asyncio.create_task(_broadcast(targets, embed))
 
     await bot.process_commands(message)
 
-# Note: discord.py has no on_close event; cleanup is handled in shutdown/main
+async def _broadcast(targets, embed):
+    sem = _semaphore
+    tasks = [_send_one(ch, embed, sem) for _, ch in targets]
+    await asyncio.gather(*tasks, return_exceptions=True)
 
-# Rate-limited broadcast function
-async def send_with_rate_limit(channel, embed, semaphore):
-    """Send message with rate limiting and error handling."""
+async def _send_one(channel, embed, semaphore):
     async with semaphore:
         try:
             await channel.send(embed=embed)
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(_RATE_SLEEP)
         except discord.Forbidden:
-            print(f"Missing permissions in channel {channel.id}")
+            pass
         except discord.HTTPException as e:
             if e.status == 429:
-                retry_after = getattr(e, 'retry_after', 5)
-                print(f"Rate limited, waiting {retry_after}s")
-                await asyncio.sleep(retry_after)
+                await asyncio.sleep(getattr(e, 'retry_after', 5))
                 try:
                     await channel.send(embed=embed)
                 except Exception:
                     pass
-            else:
-                print(f"Failed to send to {channel.id}: {e}")
-        except Exception as e:
-            print(f"Unexpected error sending to {channel.id}: {e}")
 
-# Ping command
 @bot.command()
 async def ping(ctx):
-    start = time.perf_counter_ns()
+    perf_ns = time.perf_counter_ns
+    start = perf_ns()
     msg = await ctx.reply("Measuring latency...")
-    end = time.perf_counter_ns()
-    latency_ms = round(bot.latency * 1000)
-    message_ms = round((end - start) / 1_000_000)
+    end = perf_ns()
+    latency_ms = int(bot.latency * 1000 + 0.5)
+    message_ms = (end - start) // _NS_TO_MS
     await msg.edit(content=f'Pong! API: {latency_ms}ms | Message: {message_ms}ms')
 
 @bot.command()
 async def voice_diag(ctx):
-    """Diagnose voice dependencies (Opus, PyNaCl)."""
     nacl_ok = False
     try:
         import nacl
@@ -208,23 +223,25 @@ async def voice_diag(ctx):
     except Exception:
         pass
 
-    opus_loaded = discord.opus.is_loaded()
+    opus = discord.opus
+    opus_loaded = opus.is_loaded()
     if not opus_loaded:
         try:
             opus_path = ctypes.util.find_library('opus')
             if opus_path:
-                discord.opus.load_opus(opus_path)
-                opus_loaded = discord.opus.is_loaded()
+                opus.load_opus(opus_path)
+                opus_loaded = opus.is_loaded()
         except Exception:
             pass
 
-    await ctx.reply(f"PyNaCl: {'OK' if nacl_ok else 'MISSING'} | Opus: {'LOADED' if opus_loaded else 'NOT LOADED'}")
+    nacl_str = 'OK' if nacl_ok else 'MISSING'
+    opus_str = 'LOADED' if opus_loaded else 'NOT LOADED'
+    await ctx.reply(f"PyNaCl: {nacl_str} | Opus: {opus_str}")
 
-# TTS command
 @bot.command()
 async def tts(ctx, *, message):
     voice_state = ctx.author.voice
-    if not voice_state or not voice_state.channel:
+    if voice_state is None or voice_state.channel is None:
         return await ctx.reply('You need to be in a voice channel.')
 
     voice_channel = voice_state.channel
@@ -235,43 +252,44 @@ async def tts(ctx, *, message):
         await vc.move_to(voice_channel)
 
     temp_file = f"temp_{ctx.message.id}.mp3"
+    to_thread = asyncio.to_thread
+    FFmpegPCMAudio = discord.FFmpegPCMAudio
     try:
-        await asyncio.to_thread(gTTS(text=message, lang='en').save, temp_file)
-        def _after(play_error):
-            if play_error:
-                print(f"Error in voice playback: {play_error}")
+        tts_obj = gTTS(text=message, lang='en')
+        await to_thread(tts_obj.save, temp_file)
+        def _after(err):
+            if err:
+                print(f"Error in voice playback: {err}")
             try:
                 asyncio.create_task(delete_file(temp_file))
             except RuntimeError:
                 pass
-        vc.play(discord.FFmpegPCMAudio(temp_file), after=_after)
+        vc.play(FFmpegPCMAudio(temp_file), after=_after)
     except Exception as e:
         await ctx.reply("Failed to generate TTS audio.")
         print(f"TTS Error: {e}")
         await delete_file(temp_file)
 
-# File deletion utility
 async def delete_file(filename):
     try:
         await asyncio.to_thread(os.remove, filename)
     except OSError:
         pass
 
-# Leave command
 @bot.command()
 async def leave(ctx):
-    if vc := ctx.voice_client:
+    vc = ctx.voice_client
+    if vc:
         await vc.disconnect()
         await ctx.reply("Disconnected from voice channel.")
 
-# Delete command
 @bot.command()
-@commands.cooldown(Config.COOLDOWN_RATE, Config.COOLDOWN_PER, commands.BucketType.user)
+@commands.cooldown(_CD_RATE, _CD_PER, commands.BucketType.user)
 async def delete(ctx, number_of_messages: int):
-    if ctx.author.id != Config.AUTHORIZED_USER_ID:
+    if ctx.author.id != _AUTH_USER_ID:
         return await ctx.reply("You are not authorized to use this command.")
-    if not 1 <= number_of_messages <= Config.MAX_DELETE_MESSAGES:
-        return await ctx.reply(f"Please provide a number between 1 and {Config.MAX_DELETE_MESSAGES}.")
+    if number_of_messages < 1 or number_of_messages > _MAX_DEL_MSG:
+        return await ctx.reply(f"Please provide a number between 1 and {_MAX_DEL_MSG}.")
     
     try:
         deleted = await ctx.channel.purge(limit=number_of_messages + 1)
@@ -281,45 +299,56 @@ async def delete(ctx, number_of_messages: int):
     except discord.HTTPException as e:
         await ctx.send(f"Failed to delete messages: {e}")
 
-# Save jackychat channels
 async def save_jackychat_channels():
-    current_time = time.time()
-    if current_time - bot.state.last_save_time < Config.SAVE_COOLDOWN:
+    get_time = time.time
+    current_time = get_time()
+    state = _state
+    if current_time - state.last_save_time < _SAVE_CD:
         return
-    bot.state.last_save_time = current_time
+    state.last_save_time = current_time
 
-    data = {str(gid): {'channel_id': ch.id} for gid, ch in bot.state.jackychat_channels.items()}
+    channels = _channels
+    if _ORJSON:
+        data_bytes = json.dumps({str(gid): {'channel_id': ch.id} for gid, ch in channels.items()})
+        data_str = data_bytes.decode('utf-8')
+    else:
+        data_str = json.dumps({str(gid): {'channel_id': ch.id} for gid, ch in channels.items()}, separators=_JSON_SEP)
+    
     try:
-        async with aiofiles.open('data/jackychat_channels.json', 'w') as f:
-            await f.write(json.dumps(data, separators=(',', ':')))
+        async with aiofiles.open(_DATA_PATH, 'w') as f:
+            await f.write(data_str)
     except Exception as e:
         print(f"Error saving jackychat channels: {e}")
 
-# Load jackychat channels
 async def load_jackychat_channels():
+    get_channel = bot.get_channel
+    channels = _channels
     try:
-        async with aiofiles.open('data/jackychat_channels.json', 'r') as f:
+        async with aiofiles.open(_DATA_PATH, 'r') as f:
             content = await f.read()
-            if not content.strip():
+            if not content or content.isspace():
                 return
-            data = json.loads(content)
-            channels = bot.state.jackychat_channels
+            if _ORJSON:
+                data = json.loads(content)
+            else:
+                data = json.loads(content)
             for guild_id_str, info in data.items():
-                if channel_id := info.get('channel_id'):
-                    if channel := bot.get_channel(channel_id):
+                channel_id = info.get('channel_id')
+                if channel_id:
+                    channel = get_channel(channel_id)
+                    if channel:
                         channels[int(guild_id_str)] = channel
     except FileNotFoundError:
         pass
-    except (json.JSONDecodeError, ValueError, Exception) as e:
-        print(f"Could not load data/jackychat_channels.json ({e}). Starting fresh.")
+    except Exception as e:
+        print(f"Could not load {_DATA_PATH} ({e}). Starting fresh.")
 
-# Graceful shutdown
-async def shutdown(signal, loop):
-    print(f"Received exit signal {signal.name}...")
-    current_task = asyncio.current_task()
-    tasks = [t for t in asyncio.all_tasks(loop) if t is not current_task]
-    for task in tasks:
-        task.cancel()
+async def shutdown(sig, loop):
+    print(f"Received exit signal {sig.name}...")
+    current = asyncio.current_task()
+    tasks = [t for t in asyncio.all_tasks(loop) if t is not current]
+    for t in tasks:
+        t.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)
     pool = getattr(bot, 'pool', None)
     if pool:
@@ -327,7 +356,6 @@ async def shutdown(signal, loop):
     await bot.close()
     loop.stop()
 
-# Main entry point
 async def main():
     token = os.environ.get("DISCORD_BOT_TOKEN")
     if not token:
@@ -336,8 +364,8 @@ async def main():
 
     loop = asyncio.get_running_loop()
     if sys.platform != "win32":
-        signals = (signal.SIGINT, signal.SIGTERM)
-        for sig in signals:
+        from functools import partial
+        for sig in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(sig, partial(asyncio.create_task, shutdown(sig, loop)))
 
     try:
